@@ -2,9 +2,29 @@
   <img src="assets/banner.svg" alt="MgGraphCommunity — A drop-in for Connect-MgGraph. No WAM. No MSAL. No SDK black box." width="100%">
 </p>
 
-# MgGraphCommunity
+<h1 align="center">MgGraphCommunity</h1>
 
-A community-maintained drop-in alternative to `Connect-MgGraph`. Pure PowerShell, no MSAL DLL hunting, no compiled C#, **no WAM**.
+<p align="center">
+  A community-maintained, WAM-free drop-in alternative to <code>Connect-MgGraph</code>.
+</p>
+
+<p align="center">
+  <a href="https://github.com/ugurkocde/MgGraphCommunity/actions/workflows/test.yml">
+    <img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/ugurkocde/MgGraphCommunity/test.yml?branch=main&label=tests&logo=github&style=flat-square">
+  </a>
+  <a href="https://www.powershellgallery.com/packages/MgGraphCommunity">
+    <img alt="PowerShell Gallery version" src="https://img.shields.io/powershellgallery/v/MgGraphCommunity?color=2b6cb0&label=PSGallery&logo=powershell&logoColor=white&style=flat-square">
+  </a>
+  <a href="https://www.powershellgallery.com/packages/MgGraphCommunity">
+    <img alt="PowerShell Gallery downloads" src="https://img.shields.io/powershellgallery/dt/MgGraphCommunity?color=4c9a2a&label=downloads&logo=powershell&logoColor=white&style=flat-square">
+  </a>
+  <a href="https://github.com/ugurkocde/MgGraphCommunity/blob/main/LICENSE">
+    <img alt="License" src="https://img.shields.io/github/license/ugurkocde/MgGraphCommunity?color=6c757d&style=flat-square">
+  </a>
+  <a href="https://learn.microsoft.com/powershell/scripting/install/installing-powershell">
+    <img alt="PowerShell 7+" src="https://img.shields.io/badge/PowerShell-7%2B-5391FE?logo=powershell&logoColor=white&style=flat-square">
+  </a>
+</p>
 
 > Same flows. Working interactive. Safer-by-default cache. No SDK black box.
 
