@@ -107,15 +107,6 @@ If you also need a permission-scanning tool with its own GUI, look at [M365Permi
 - **That's it.** No `Microsoft.Graph.*` modules, no MSAL, no anything else.
 - If `Microsoft.Graph.Authentication` happens to be installed in your session we hand off the token to `Connect-MgGraph` so existing SDK-based scripts (`Get-MgUser`, `Invoke-MgGraphRequest`, etc.) keep working — but this is purely a convenience, never required.
 
-## Install (from this repo)
-
-```powershell
-git clone https://github.com/ugurkocde/MgGraphCommunity.git
-Import-Module ./MgGraphCommunity/MgGraphCommunity.psd1
-```
-
-PowerShell Gallery publish coming after live smoke-testing.
-
 ## Usage
 
 ```powershell
