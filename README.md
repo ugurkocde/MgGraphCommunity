@@ -123,6 +123,14 @@ Invoke-MgGraphCommunityRequest -Method POST -Uri '/groups' -Body @{
 # Short alias if you don't want to type the full name
 Invoke-MgcRequest -Uri '/me'
 
+# Sticky headers for the session (useful for ConsistencyLevel, Prefer, etc.)
+Add-MgGraphCommunityDefaultHeader -Name 'ConsistencyLevel' -Value 'eventual'
+Invoke-MgGraphCommunityRequest -Uri "/users?\$count=true&\$filter=startswith(displayName,'A')"
+# Or via aliases
+Add-MgcHeader 'Prefer' 'odata.maxpagesize=100'
+Get-MgcHeader        # list everything currently sticky
+Remove-MgcHeader 'Prefer'
+
 # If you also have Microsoft.Graph.Authentication installed, the official cmdlets also work
 Get-MgUser -Top 5
 Invoke-MgGraphRequest -Method GET -Uri '/me'

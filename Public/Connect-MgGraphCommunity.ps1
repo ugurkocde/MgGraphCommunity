@@ -308,6 +308,7 @@ function Connect-MgGraphCommunity {
     # Record the active session for Invoke-MgGraphCommunityRequest + silent refresh
     $script:MgcActiveSession = [pscustomobject]@{
         Tokens        = $tokens
+        ExpiresOn     = (Get-MgcTokenExpiry -Tokens $tokens)
         CacheKey      = $cacheKey
         Authority     = $authority
         ClientId      = $ClientId
@@ -320,7 +321,7 @@ function Connect-MgGraphCommunity {
     # Opportunistic SDK handoff — silent no-op if Microsoft.Graph.Authentication isn't installed
     $sdkHandoff = Send-MgcTokenToSdk -AccessToken $tokens.access_token
 
-    # Build and store the user-visible context
+    # Build and store the user-visible context (retrievable via Get-MgGraphCommunityContext)
     $context = Set-MgcConnectionContext `
         -Tokens      $tokens `
         -FlowType    $flowType `
@@ -332,5 +333,6 @@ function Connect-MgGraphCommunity {
     $context | Add-Member -NotePropertyName SdkHandoff -NotePropertyValue $sdkHandoff -Force
 
     if (-not $NoWelcome) { Show-MgcWelcomeBanner -Context $context }
-    return $context
+    # Intentionally no return value — matches Connect-MgGraph behavior.
+    # Use Get-MgGraphCommunityContext to retrieve the connection details.
 }

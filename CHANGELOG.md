@@ -4,6 +4,23 @@ All notable changes to MgGraphCommunity are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-05-25
+
+Hardens the request layer and cleans up the connect UX.
+
+### Fixed
+- `Invoke-MgGraphCommunityRequest` no longer uses `-StatusCodeVariable`, which was PowerShell 7.4+ only and broke the cmdlet on PS 7.0–7.3. Status is now read directly from the response object. Works on PowerShell 7.1+.
+
+### Changed
+- `Connect-MgGraphCommunity` no longer returns the context object to the pipeline. `-NoWelcome` now produces a truly silent connect. Use `Get-MgGraphCommunityContext` to retrieve the active connection details.
+- Manifest `PowerShellVersion` bumped from `7.0` to `7.1` to honestly reflect the .NET 5+ static-method usage in PKCE/SHA-256 helpers.
+
+### Added
+- **Proactive token refresh.** When `Invoke-MgGraphCommunityRequest` runs, if the access token expires within 5 minutes, it refreshes silently before the call (in addition to the reactive 401-retry path that already existed). Eliminates the one wasted 401 in long-running scripts.
+- **HTTP 504 Gateway Timeout retry.** Graph occasionally returns 504 under load; the cmdlet now sleeps 60 seconds and retries once.
+- **Default headers**: `Add-MgGraphCommunityDefaultHeader`, `Remove-MgGraphCommunityDefaultHeader`, `Get-MgGraphCommunityDefaultHeader`. Set sticky headers for the session (e.g. `ConsistencyLevel: eventual`) without repeating `-Headers` on every call. Short aliases: `Add-MgcHeader`, `Remove-MgcHeader`, `Get-MgcHeader`. Per-call `-Headers` override defaults; default headers are cleared by `Disconnect-MgGraphCommunity`.
+- New private helper `Get-MgcTokenExpiry` extracts the JWT `exp` claim (with `expires_in` fallback) and is used by both the proactive-refresh path and the active-session bookkeeping.
+
 ## [1.1.0] - 2026-05-25
 
 The module is now fully self-contained — no required modules.

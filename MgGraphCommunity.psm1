@@ -6,9 +6,10 @@
 $ErrorActionPreference = 'Stop'
 
 # In-memory connection + token cache state, scoped to the module session.
-$script:MgcContext       = $null
-$script:MgcMemoryCache   = @{}
-$script:MgcActiveSession = $null   # holds tokens + refresh metadata for the live session
+$script:MgcContext        = $null
+$script:MgcMemoryCache    = @{}
+$script:MgcActiveSession  = $null   # holds tokens + refresh metadata for the live session
+$script:MgcDefaultHeaders = @{}     # sticky HTTP headers for Invoke-MgGraphCommunityRequest
 
 # Load order: Common -> Cache -> State -> Sdk -> Auth -> Public
 $privateFolders = @('Common','Cache','State','Sdk','Auth')
@@ -30,4 +31,4 @@ if (Test-Path $publicPath) {
 
 Export-ModuleMember `
     -Function ($publicFiles | ForEach-Object { $_.BaseName }) `
-    -Alias    @('Invoke-MgcRequest')
+    -Alias    @('Invoke-MgcRequest','Add-MgcHeader','Remove-MgcHeader','Get-MgcHeader')

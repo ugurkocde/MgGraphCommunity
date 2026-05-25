@@ -9,15 +9,18 @@ function Invoke-MgGraphCommunityRequest {
         Connect-MgGraphCommunity call.
 
         Features:
-          - Auto-prepends the Graph host for relative URIs (e.g. '/me' becomes
-            'https://graph.microsoft.com/v1.0/me').
-          - -Beta swaps the path from /v1.0 to /beta.
-          - On HTTP 401 with an Unauthorized response, attempts a single silent
-            refresh (if a refresh token is cached) and retries the call.
+          - Auto-prepends the active environment's Graph host for relative URIs
+            ('/me' becomes 'https://graph.microsoft.com/v1.0/me').
+          - -Beta swaps /v1.0 -> /beta for relative URIs.
+          - Proactive refresh: if the access token expires within 5 minutes, the
+            cached refresh token is used to silently re-acquire BEFORE the call.
+          - Reactive refresh: on HTTP 401, attempts one silent refresh and retries.
           - On HTTP 429, honors the Retry-After header and retries.
+          - On HTTP 504 Gateway Timeout, sleeps 60 seconds and retries once.
           - -FollowPagination walks @odata.nextLink and returns combined values.
-          - Surfaces Microsoft Graph error objects as PowerShell errors with
-            error.code and error.message.
+          - Default headers added via Add-MgGraphCommunityDefaultHeader are merged
+            automatically. Per-call -Headers override defaults.
+          - Surfaces Microsoft Graph error.code / error.message as PowerShell errors.
 
         Requires Connect-MgGraphCommunity to have established a session first.
 
@@ -26,14 +29,13 @@ function Invoke-MgGraphCommunityRequest {
 
     .PARAMETER Uri
         Full URL (https://graph.microsoft.com/...) or a relative path
-        ('/me', 'users?$top=5'). Relative paths are prefixed with the active
-        environment's Graph host and the /v1.0 (or /beta) path.
+        ('/me', 'users?$top=5').
 
     .PARAMETER Body
         Request body. Objects are serialized as JSON; strings are sent as-is.
 
     .PARAMETER Headers
-        Additional HTTP headers to merge with Authorization + Content-Type.
+        Per-call HTTP headers. Merged on top of any default headers; per-call wins.
 
     .PARAMETER OutputType
         'PSObject' (default) parses JSON into PowerShell objects.
@@ -41,8 +43,7 @@ function Invoke-MgGraphCommunityRequest {
         'HttpResponse' returns the raw response object.
 
     .PARAMETER FollowPagination
-        Auto-follow @odata.nextLink and merge the .value arrays across pages.
-        Returns a single combined array.
+        Auto-follow @odata.nextLink and merge .value arrays across pages.
 
     .PARAMETER Beta
         Use the /beta endpoint instead of /v1.0 when expanding a relative URI.
@@ -58,7 +59,6 @@ function Invoke-MgGraphCommunityRequest {
 
     .EXAMPLE
         Invoke-MgGraphCommunityRequest -Uri '/users' -FollowPagination
-        # Returns all users across all pages as a single array.
 
     .EXAMPLE
         Invoke-MgGraphCommunityRequest -Method POST -Uri '/groups' -Body @{
@@ -93,6 +93,28 @@ function Invoke-MgGraphCommunityRequest {
         throw "Not connected. Run Connect-MgGraphCommunity first."
     }
 
+    # ---- Proactive token refresh ----
+    # If the access token expires within 5 minutes, refresh before the call.
+    if ($script:MgcActiveSession.ExpiresOn -and $script:MgcActiveSession.Tokens.refresh_token) {
+        $remainingMin = ($script:MgcActiveSession.ExpiresOn - (Get-Date).ToUniversalTime()).TotalMinutes
+        if ($remainingMin -le 5) {
+            Write-Verbose ("Access token expires in {0:N1} min — refreshing proactively." -f $remainingMin)
+            try {
+                $newTokens = Invoke-MgcRefreshTokenAuth `
+                    -LoginEndpoint $script:MgcActiveSession.Authority.Login `
+                    -TenantSegment $script:MgcActiveSession.TenantSegment `
+                    -ClientId      $script:MgcActiveSession.ClientId `
+                    -RefreshToken  $script:MgcActiveSession.Tokens.refresh_token `
+                    -Scopes        $script:MgcActiveSession.Scopes
+                $script:MgcActiveSession.Tokens    = $newTokens
+                $script:MgcActiveSession.ExpiresOn = Get-MgcTokenExpiry -Tokens $newTokens
+                Save-MgcTokenCache -Key $script:MgcActiveSession.CacheKey -Tokens $newTokens -Persist:$script:MgcActiveSession.Persist
+            } catch {
+                Write-Verbose "Proactive refresh failed (will rely on reactive 401 retry): $_"
+            }
+        }
+    }
+
     # Resolve relative URIs against the active environment
     $resolvedUri = if ($Uri -match '^https?://') {
         $Uri
@@ -102,7 +124,7 @@ function Invoke-MgGraphCommunityRequest {
         "{0}/{1}/{2}" -f $script:MgcActiveSession.Authority.GraphResource, $apiVer, $cleaned
     }
 
-    # Build the request closure (so we can call it twice: once, and again after a refresh)
+    # Build the request closure (so we can call it multiple times for retries)
     $sendRequest = {
         param([string]$accessToken)
 
@@ -110,6 +132,11 @@ function Invoke-MgGraphCommunityRequest {
             'Authorization' = "Bearer $accessToken"
             'Content-Type'  = 'application/json'
         }
+        # Session-wide default headers (set via Add-MgGraphCommunityDefaultHeader)
+        if ($script:MgcDefaultHeaders) {
+            foreach ($k in $script:MgcDefaultHeaders.Keys) { $mergedHeaders[$k] = $script:MgcDefaultHeaders[$k] }
+        }
+        # Per-call -Headers override defaults
         if ($Headers) {
             foreach ($k in $Headers.Keys) { $mergedHeaders[$k] = $Headers[$k] }
         }
@@ -120,7 +147,6 @@ function Invoke-MgGraphCommunityRequest {
             Headers            = $mergedHeaders
             ErrorAction        = 'Stop'
             SkipHttpErrorCheck = $true
-            StatusCodeVariable = 'sc'
         }
 
         if ($PSBoundParameters.ContainsKey('Body') -and $null -ne $Body) {
@@ -128,13 +154,16 @@ function Invoke-MgGraphCommunityRequest {
         }
 
         $response = Invoke-WebRequest @params
-        [pscustomobject]@{ StatusCode = $sc; Response = $response }
+        # Read status code directly from the response (works on PS 7.0+).
+        # -StatusCodeVariable is PS 7.4+ only and would break older runtimes.
+        $statusInt = [int]$response.StatusCode
+        [pscustomobject]@{ StatusCode = $statusInt; Response = $response }
     }
 
     # ---- First attempt ----
     $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
 
-    # ---- Retry on 401: refresh once if possible ----
+    # ---- Retry on 401: reactive refresh once if possible ----
     if ($attempt.StatusCode -eq 401 -and $script:MgcActiveSession.Tokens.refresh_token) {
         Write-Verbose "401 from Graph — attempting silent token refresh."
         try {
@@ -144,11 +173,12 @@ function Invoke-MgGraphCommunityRequest {
                 -ClientId      $script:MgcActiveSession.ClientId `
                 -RefreshToken  $script:MgcActiveSession.Tokens.refresh_token `
                 -Scopes        $script:MgcActiveSession.Scopes
-            $script:MgcActiveSession.Tokens = $newTokens
+            $script:MgcActiveSession.Tokens    = $newTokens
+            $script:MgcActiveSession.ExpiresOn = Get-MgcTokenExpiry -Tokens $newTokens
             Save-MgcTokenCache -Key $script:MgcActiveSession.CacheKey -Tokens $newTokens -Persist:$script:MgcActiveSession.Persist
             $attempt = & $sendRequest -accessToken $newTokens.access_token
         } catch {
-            Write-Verbose "Silent refresh failed: $_"
+            Write-Verbose "Reactive refresh failed: $_"
         }
     }
 
@@ -162,6 +192,13 @@ function Invoke-MgGraphCommunityRequest {
         $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
     }
 
+    # ---- Retry on 504: Graph gateway timeout ----
+    if ($attempt.StatusCode -eq 504) {
+        Write-Verbose "504 Gateway Timeout from Graph — sleeping 60 seconds and retrying once."
+        Start-Sleep -Seconds 60
+        $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
+    }
+
     # ---- Error handling ----
     if ($attempt.StatusCode -ge 400) {
         $msg = "HTTP $($attempt.StatusCode) from $resolvedUri"
@@ -170,9 +207,7 @@ function Invoke-MgGraphCommunityRequest {
             if ($errBody.error) {
                 $msg = "Graph error $($attempt.StatusCode) [$($errBody.error.code)]: $($errBody.error.message)"
             }
-        } catch {
-            # leave default message
-        }
+        } catch { }
         throw $msg
     }
 

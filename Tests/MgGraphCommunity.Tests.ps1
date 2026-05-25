@@ -120,15 +120,24 @@ Describe 'Token cache round-trip (in-memory)' {
 Describe 'Module loads and exports the expected surface' {
     It 'exports all public functions' {
         $m = Get-Module MgGraphCommunity
-        $m.ExportedFunctions.Keys | Should -Contain 'Connect-MgGraphCommunity'
-        $m.ExportedFunctions.Keys | Should -Contain 'Disconnect-MgGraphCommunity'
-        $m.ExportedFunctions.Keys | Should -Contain 'Get-MgGraphCommunityContext'
-        $m.ExportedFunctions.Keys | Should -Contain 'Invoke-MgGraphCommunityRequest'
+        foreach ($name in @(
+            'Connect-MgGraphCommunity',
+            'Disconnect-MgGraphCommunity',
+            'Get-MgGraphCommunityContext',
+            'Invoke-MgGraphCommunityRequest',
+            'Add-MgGraphCommunityDefaultHeader',
+            'Remove-MgGraphCommunityDefaultHeader',
+            'Get-MgGraphCommunityDefaultHeader'
+        )) {
+            $m.ExportedFunctions.Keys | Should -Contain $name
+        }
     }
 
-    It 'exports the Invoke-MgcRequest alias' {
+    It 'exports all short-form aliases' {
         $m = Get-Module MgGraphCommunity
-        $m.ExportedAliases.Keys | Should -Contain 'Invoke-MgcRequest'
+        foreach ($alias in @('Invoke-MgcRequest','Add-MgcHeader','Remove-MgcHeader','Get-MgcHeader')) {
+            $m.ExportedAliases.Keys | Should -Contain $alias
+        }
     }
 
     It 'has no required modules in the manifest' {
@@ -139,12 +148,69 @@ Describe 'Module loads and exports the expected surface' {
 
 Describe 'Invoke-MgGraphCommunityRequest' {
     BeforeAll {
-        # Force-clear any active session for these tests
         $m = Get-Module MgGraphCommunity
         & $m { $script:MgcActiveSession = $null }
     }
 
     It 'throws a clear error when no session is active' {
         { Invoke-MgGraphCommunityRequest -Uri '/me' } | Should -Throw -ExpectedMessage '*Connect-MgGraphCommunity*'
+    }
+}
+
+Describe 'Default headers' {
+    BeforeEach {
+        $m = Get-Module MgGraphCommunity
+        & $m { $script:MgcDefaultHeaders = @{} }
+    }
+
+    It 'Add and Get round-trip' {
+        Add-MgGraphCommunityDefaultHeader -Name 'ConsistencyLevel' -Value 'eventual'
+        Get-MgGraphCommunityDefaultHeader -Name 'ConsistencyLevel' | Should -Be 'eventual'
+    }
+
+    It 'Get without -Name returns all headers as Name/Value objects' {
+        Add-MgGraphCommunityDefaultHeader -Name 'A' -Value '1'
+        Add-MgGraphCommunityDefaultHeader -Name 'B' -Value '2'
+        $all = Get-MgGraphCommunityDefaultHeader
+        ($all | Measure-Object).Count | Should -Be 2
+        ($all | Where-Object Name -EQ 'A').Value | Should -Be '1'
+    }
+
+    It 'Remove deletes the header' {
+        Add-MgGraphCommunityDefaultHeader -Name 'X' -Value 'y'
+        Remove-MgGraphCommunityDefaultHeader -Name 'X'
+        Get-MgGraphCommunityDefaultHeader -Name 'X' | Should -BeNullOrEmpty
+    }
+
+    It 'short aliases work' {
+        Add-MgcHeader 'Prefer' 'odata.maxpagesize=100'
+        (Get-MgcHeader 'Prefer') | Should -Be 'odata.maxpagesize=100'
+        Remove-MgcHeader 'Prefer'
+        Get-MgcHeader 'Prefer' | Should -BeNullOrEmpty
+    }
+
+    It 'Add overwrites an existing value (set semantics)' {
+        Add-MgGraphCommunityDefaultHeader -Name 'K' -Value 'v1'
+        Add-MgGraphCommunityDefaultHeader -Name 'K' -Value 'v2'
+        Get-MgGraphCommunityDefaultHeader -Name 'K' | Should -Be 'v2'
+    }
+}
+
+Describe 'Get-MgcTokenExpiry' {
+    It 'extracts the exp claim from a JWT' {
+        $futureExp = [int]([DateTimeOffset]::UtcNow.AddHours(1).ToUnixTimeSeconds())
+        $header  = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('{"alg":"none","typ":"JWT"}')).TrimEnd('=').Replace('+','-').Replace('/','_')
+        $payload = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(('{"exp":' + $futureExp + '}'))).TrimEnd('=').Replace('+','-').Replace('/','_')
+        $jwt     = "$header.$payload."
+        $tokens  = [pscustomobject]@{ access_token = $jwt }
+        $expiry  = Get-MgcTokenExpiry -Tokens $tokens
+        $expiry.Kind | Should -Be 'Utc'
+        $expiry      | Should -BeGreaterThan (Get-Date).ToUniversalTime()
+    }
+
+    It 'falls back to expires_in when no JWT is decodable' {
+        $tokens = [pscustomobject]@{ access_token = 'not-a-jwt'; expires_in = 3600 }
+        $expiry = Get-MgcTokenExpiry -Tokens $tokens
+        $expiry | Should -BeGreaterThan (Get-Date).ToUniversalTime()
     }
 }
