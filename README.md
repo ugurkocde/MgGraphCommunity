@@ -23,10 +23,12 @@
 ```powershell
 Install-Module MgGraphCommunity -Scope CurrentUser
 Connect-MgGraphCommunity
-Invoke-MgGraphCommunityRequest -Method GET -Uri 'https://graph.microsoft.com/beta/me'
+Invoke-MgGraphCommunityRequest -Method GET -Uri "https://graph.microsoft.com/beta/me"
 ```
 
 That's it. One install. Browser opens, you sign in, you call Graph. **No `Microsoft.Graph.*` modules required.**
+
+> Use **double quotes** around the URI as a habit — Graph IDs use OData single quotes (`('user@contoso.com')`) which would otherwise close a single-quoted PowerShell string early.
 
 > Already have `Microsoft.Graph.Authentication` installed? Your `Get-MgUser`, `Invoke-MgGraphRequest`, etc. keep working too — we hand off the token opportunistically.
 
