@@ -98,7 +98,7 @@ function Invoke-MgGraphCommunityRequest {
     if ($script:MgcActiveSession.ExpiresOn -and $script:MgcActiveSession.Tokens.refresh_token) {
         $remainingMin = ($script:MgcActiveSession.ExpiresOn - (Get-Date).ToUniversalTime()).TotalMinutes
         if ($remainingMin -le 5) {
-            Write-Verbose ("Access token expires in {0:N1} min — refreshing proactively." -f $remainingMin)
+            Write-Verbose ("Access token expires in {0:N1} min - refreshing proactively." -f $remainingMin)
             try {
                 $newTokens = Invoke-MgcRefreshTokenAuth `
                     -LoginEndpoint $script:MgcActiveSession.Authority.Login `
@@ -161,7 +161,7 @@ function Invoke-MgGraphCommunityRequest {
 
     # ---- Retry on 401: reactive refresh once if possible ----
     if ($attempt.StatusCode -eq 401 -and $script:MgcActiveSession.Tokens.refresh_token) {
-        Write-Verbose "401 from Graph — attempting silent token refresh."
+        Write-Verbose "401 from Graph - attempting silent token refresh."
         try {
             $newTokens = Invoke-MgcRefreshTokenAuth `
                 -LoginEndpoint $script:MgcActiveSession.Authority.Login `
@@ -184,14 +184,14 @@ function Invoke-MgGraphCommunityRequest {
         if ($attempt.Headers -and $attempt.Headers['Retry-After']) {
             try { $wait = [int]([array]$attempt.Headers['Retry-After'])[0] } catch { }
         }
-        Write-Verbose "429 throttled by Graph — sleeping $wait seconds before retry."
+        Write-Verbose "429 throttled by Graph - sleeping $wait seconds before retry."
         Start-Sleep -Seconds $wait
         $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
     }
 
     # ---- Retry on 504: Graph gateway timeout ----
     if ($attempt.StatusCode -eq 504) {
-        Write-Verbose "504 Gateway Timeout from Graph — sleeping 60 seconds and retrying once."
+        Write-Verbose "504 Gateway Timeout from Graph - sleeping 60 seconds and retrying once."
         Start-Sleep -Seconds 60
         $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
     }

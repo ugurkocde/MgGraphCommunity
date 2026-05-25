@@ -5,7 +5,7 @@ function Show-MgcWelcomeBanner {
     #>
     [CmdletBinding()]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost','',
-        Justification = 'User-visible welcome banner — Write-Host is intentional.')]
+        Justification = 'User-visible welcome banner - Write-Host is intentional.')]
     param(
         [Parameter(Mandatory)][object]$Context
     )

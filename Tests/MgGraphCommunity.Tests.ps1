@@ -1,6 +1,6 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0' }
 
-# Smoke tests — pure unit, no live tenant calls.
+# Smoke tests - pure unit, no live tenant calls.
 
 BeforeAll {
     $script:ModuleRoot = Resolve-Path (Join-Path $PSScriptRoot '..')

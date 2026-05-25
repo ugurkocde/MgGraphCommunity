@@ -6,7 +6,7 @@ function Invoke-MgcHttpRequest {
     .DESCRIPTION
         PowerShell 7 added 'Invoke-WebRequest -SkipHttpErrorCheck' which suppresses
         the exception on 4xx/5xx and returns the response object. Windows PowerShell 5.1
-        doesn't have that switch — it always throws on HTTP errors, and the response is
+        doesn't have that switch - it always throws on HTTP errors, and the response is
         available only via $_.Exception.Response (with a different shape).
 
         This helper unifies both behaviors. Returns a PSCustomObject with:
@@ -16,7 +16,7 @@ function Invoke-MgcHttpRequest {
 
     .PARAMETER Parameters
         Hashtable of parameters to pass to Invoke-WebRequest (Uri, Method, Headers, Body, etc.).
-        Do NOT set SkipHttpErrorCheck or ErrorAction — this helper manages those.
+        Do NOT set SkipHttpErrorCheck or ErrorAction - this helper manages those.
     #>
     [CmdletBinding()]
     param(

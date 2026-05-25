@@ -12,6 +12,6 @@ function Test-MgcIsWindows {
     param()
 
     if ($PSVersionTable.PSEdition -eq 'Desktop') { return $true }
-    # PS 6+ — $IsWindows is defined
+    # PS 6+ - $IsWindows is defined
     return [bool]$IsWindows
 }

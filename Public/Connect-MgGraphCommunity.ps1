@@ -318,7 +318,7 @@ function Connect-MgGraphCommunity {
         Persist       = [bool]$PersistRefreshToken
     }
 
-    # Opportunistic SDK handoff — silent no-op if Microsoft.Graph.Authentication isn't installed
+    # Opportunistic SDK handoff - silent no-op if Microsoft.Graph.Authentication isn't installed
     $sdkHandoff = Send-MgcTokenToSdk -AccessToken $tokens.access_token
 
     # Build and store the user-visible context (retrievable via Get-MgGraphCommunityContext)
@@ -333,6 +333,6 @@ function Connect-MgGraphCommunity {
     $context | Add-Member -NotePropertyName SdkHandoff -NotePropertyValue $sdkHandoff -Force
 
     if (-not $NoWelcome) { Show-MgcWelcomeBanner -Context $context }
-    # Intentionally no return value — matches Connect-MgGraph behavior.
+    # Intentionally no return value - matches Connect-MgGraph behavior.
     # Use Get-MgGraphCommunityContext to retrieve the connection details.
 }

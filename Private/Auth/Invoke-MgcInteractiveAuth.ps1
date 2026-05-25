@@ -13,7 +13,7 @@ function Invoke-MgcInteractiveAuth {
     #>
     [CmdletBinding()]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost','',
-        Justification = 'Interactive flow — user-visible progress.')]
+        Justification = 'Interactive flow - user-visible progress.')]
     param(
         [Parameter(Mandatory)][string]$LoginEndpoint,
         [Parameter(Mandatory)][string]$TenantSegment,

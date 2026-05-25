@@ -6,7 +6,7 @@ function ConvertFrom-MgcJwt {
     .DESCRIPTION
         Splits the JWT, base64url-decodes the payload segment, and returns the parsed
         JSON as a PSCustomObject. Used only for displaying identity/tenant/expiry to
-        the user — never trust unsigned token contents for authorization decisions.
+        the user - never trust unsigned token contents for authorization decisions.
 
     .PARAMETER Token
         The raw JWT string (header.payload.signature).

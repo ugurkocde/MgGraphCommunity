@@ -9,7 +9,7 @@
     PowerShellVersion    = '5.1'
     CompatiblePSEditions = @('Desktop','Core')
 
-    # No required modules — MgGraphCommunity is fully self-contained.
+    # No required modules - MgGraphCommunity is fully self-contained.
     # If Microsoft.Graph.Authentication happens to be installed, we hand off
     # the access token so existing Microsoft.Graph.* cmdlets also work.
 

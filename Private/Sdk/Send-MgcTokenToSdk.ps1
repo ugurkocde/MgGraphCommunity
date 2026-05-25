@@ -5,7 +5,7 @@ function Send-MgcTokenToSdk {
         Microsoft.Graph.* cmdlets work, IF the SDK is installed.
 
     .DESCRIPTION
-        MgGraphCommunity does not require the Microsoft.Graph SDK — it ships its own
+        MgGraphCommunity does not require the Microsoft.Graph SDK - it ships its own
         Invoke-MgGraphCommunityRequest. But if the user happens to have
         Microsoft.Graph.Authentication installed, we hand the token to Connect-MgGraph
         so existing SDK-based scripts keep working in the same session.
@@ -24,7 +24,7 @@ function Send-MgcTokenToSdk {
     )
 
     if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
-        Write-Verbose "Microsoft.Graph.Authentication not installed — skipping SDK handoff. Use Invoke-MgGraphCommunityRequest to call Graph directly."
+        Write-Verbose "Microsoft.Graph.Authentication not installed - skipping SDK handoff. Use Invoke-MgGraphCommunityRequest to call Graph directly."
         return $false
     }
 
