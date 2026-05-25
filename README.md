@@ -123,6 +123,11 @@ Invoke-MgGraphCommunityRequest -Method POST -Uri '/groups' -Body @{
 # Short alias if you don't want to type the full name
 Invoke-MgcRequest -Uri '/me'
 
+# Tip: when a URL contains OData single quotes (most Graph IDs do), wrap the URI in
+# double quotes so PowerShell doesn't terminate your string at the first single quote.
+Invoke-MgGraphCommunityRequest -Method GET -Uri "/users('admin@contoso.com')"
+Invoke-MgGraphCommunityRequest -Method GET -Uri "https://graph.microsoft.com/beta/deviceManagement/managedDevices('e81b1566-f49f-42df-bdc9-40c91a0eda25')"
+
 # Sticky headers for the session (useful for ConsistencyLevel, Prefer, etc.)
 Add-MgGraphCommunityDefaultHeader -Name 'ConsistencyLevel' -Value 'eventual'
 Invoke-MgGraphCommunityRequest -Uri "/users?\$count=true&\$filter=startswith(displayName,'A')"
