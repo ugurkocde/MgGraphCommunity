@@ -1,0 +1,44 @@
+name: Publish to PowerShell Gallery
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Publish module
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install required modules
+        shell: pwsh
+        run: |
+          Install-Module Microsoft.Graph.Authentication -Scope CurrentUser -Force -AllowClobber
+
+      - name: Validate manifest
+        shell: pwsh
+        run: |
+          $manifest = Test-ModuleManifest -Path ./MgGraphCommunity.psd1
+          Write-Host "Module: $($manifest.Name) v$($manifest.Version)"
+
+      - name: Publish to PSGallery
+        shell: pwsh
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: |
+          if (-not $env:PSGALLERY_API_KEY) {
+            throw "PSGALLERY_API_KEY secret is not set in repository settings."
+          }
+          $tempPath = Join-Path $env:RUNNER_TEMP 'MgGraphCommunity'
+          New-Item -ItemType Directory -Path $tempPath -Force | Out-Null
+          Copy-Item -Path ./MgGraphCommunity.psd1 -Destination $tempPath
+          Copy-Item -Path ./MgGraphCommunity.psm1 -Destination $tempPath
+          Copy-Item -Path ./Public  -Destination $tempPath -Recurse
+          Copy-Item -Path ./Private -Destination $tempPath -Recurse
+          Copy-Item -Path ./LICENSE -Destination $tempPath
+          Copy-Item -Path ./README.md -Destination $tempPath
+          Copy-Item -Path ./CHANGELOG.md -Destination $tempPath
+          Publish-Module -Path $tempPath -NuGetApiKey $env:PSGALLERY_API_KEY -Verbose

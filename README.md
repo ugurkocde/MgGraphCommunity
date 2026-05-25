@@ -50,8 +50,8 @@ Sovereign clouds: pass `-Environment Global|USGov|USGovDoD|China`.
 ## Install (from this repo)
 
 ```powershell
-git clone https://github.com/ugurkocde/Intune.git
-Import-Module ./Intune/MgGraphCommunity/MgGraphCommunity.psd1
+git clone https://github.com/ugurkocde/MgGraphCommunity.git
+Import-Module ./MgGraphCommunity/MgGraphCommunity.psd1
 ```
 
 PowerShell Gallery publish coming after live smoke-testing.

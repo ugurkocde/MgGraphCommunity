@@ -24,8 +24,8 @@
     PrivateData = @{
         PSData = @{
             Tags         = @('Microsoft','Graph','MgGraph','Authentication','OAuth','PKCE','Intune','Entra','EntraID','Community')
-            LicenseUri   = 'https://github.com/ugurkocde/Intune/blob/main/LICENSE'
-            ProjectUri   = 'https://github.com/ugurkocde/Intune/tree/main/MgGraphCommunity'
+            LicenseUri   = 'https://github.com/ugurkocde/MgGraphCommunity/blob/main/LICENSE'
+            ProjectUri   = 'https://github.com/ugurkocde/MgGraphCommunity'
             ReleaseNotes = @'
 1.0.0
 - Initial community release

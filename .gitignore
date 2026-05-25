@@ -1,0 +1,29 @@
+# PowerShell
+*.psproj
+*.psproj.user
+PSScriptAnalyzerResults.*
+coverage.xml
+TestResults.xml
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local module dev artifacts
+/output/
+/publish/
+*.nupkg
+
+# Secrets (defensive — never commit these)
+*.pfx
+*.key
+.env
+.env.*
+secrets.*
