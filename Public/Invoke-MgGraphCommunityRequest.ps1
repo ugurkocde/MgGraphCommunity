@@ -199,13 +199,28 @@ function Invoke-MgGraphCommunityRequest {
         $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
     }
 
+    # Helper: read response body as a string regardless of whether the underlying
+    # runtime returned byte[] (PS 7.0-7.3) or string (PS 7.4+).
+    $readBodyString = {
+        param($resp)
+        if (-not $resp -or $null -eq $resp.Content) { return $null }
+        if ($resp.Content -is [byte[]]) {
+            if ($resp.Content.Length -eq 0) { return $null }
+            return [System.Text.Encoding]::UTF8.GetString($resp.Content)
+        }
+        return [string]$resp.Content
+    }
+
     # ---- Error handling ----
     if ($attempt.StatusCode -ge 400) {
         $msg = "HTTP $($attempt.StatusCode) from $resolvedUri"
         try {
-            $errBody = [System.Text.Encoding]::UTF8.GetString($attempt.Response.Content) | ConvertFrom-Json -ErrorAction Stop
-            if ($errBody.error) {
-                $msg = "Graph error $($attempt.StatusCode) [$($errBody.error.code)]: $($errBody.error.message)"
+            $errRaw = & $readBodyString $attempt.Response
+            if ($errRaw) {
+                $errBody = $errRaw | ConvertFrom-Json -ErrorAction Stop
+                if ($errBody.error) {
+                    $msg = "Graph error $($attempt.StatusCode) [$($errBody.error.code)]: $($errBody.error.message)"
+                }
             }
         } catch { }
         throw $msg
@@ -216,9 +231,7 @@ function Invoke-MgGraphCommunityRequest {
     # Parse JSON response
     $contentType = $attempt.Response.Headers['Content-Type']
     $isJson = $contentType -and ($contentType -join ' ') -match 'json'
-    $raw = if ($attempt.Response.Content) {
-        [System.Text.Encoding]::UTF8.GetString($attempt.Response.Content)
-    } else { $null }
+    $raw = & $readBodyString $attempt.Response
 
     if (-not $raw) { return $null }
     if (-not $isJson) { return $raw }

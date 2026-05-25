@@ -4,6 +4,11 @@ All notable changes to MgGraphCommunity are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-05-25
+
+### Fixed
+- `Invoke-MgGraphCommunityRequest` crashed on PowerShell 7.4+ with `Cannot convert argument "bytes" ... to type System.Byte[]`. On PowerShell 7.4+, `Invoke-WebRequest`'s `Content` property is a string for text/JSON responses, not a byte array — calling `[Encoding]::UTF8.GetString($content)` blew up. The cmdlet now detects the shape of `Content` and handles both byte[] (PS 7.1–7.3) and string (PS 7.4+) responses. Same fix applied to the error-body parsing path.
+
 ## [1.2.0] - 2026-05-25
 
 Hardens the request layer and cleans up the connect UX.

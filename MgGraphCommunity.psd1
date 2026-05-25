@@ -1,6 +1,6 @@
 @{
     RootModule           = 'MgGraphCommunity.psm1'
-    ModuleVersion        = '1.2.0'
+    ModuleVersion        = '1.2.1'
     GUID                 = 'a7c1f4b8-5d20-4e6e-9a3b-2e8f0d1c7b42'
     Author               = 'MgGraphCommunity contributors'
     CompanyName          = 'Community'
@@ -31,6 +31,12 @@
             LicenseUri   = 'https://github.com/ugurkocde/MgGraphCommunity/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/ugurkocde/MgGraphCommunity'
             ReleaseNotes = @'
+1.2.1
+- Hotfix: Invoke-MgGraphCommunityRequest crashed on PowerShell 7.4+ with
+  "Cannot convert ... GetString to type System.Byte[]". On PS 7.4+, Invoke-WebRequest
+  returns the Content property as a string for text/JSON responses, not byte[].
+  The cmdlet now handles both shapes so it works on PS 7.1 through 7.4+.
+
 1.2.0
 - Fix: removed -StatusCodeVariable usage in Invoke-MgGraphCommunityRequest. That parameter is
   PowerShell 7.4+ only and broke the cmdlet on PS 7.0-7.3. Now reads status directly from the
