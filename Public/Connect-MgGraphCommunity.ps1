@@ -305,10 +305,22 @@ function Connect-MgGraphCommunity {
         Save-MgcTokenCache -Key $cacheKey -Tokens $tokens -Persist:$PersistRefreshToken
     }
 
-    # Hand off to the Graph SDK so Microsoft.Graph.* cmdlets work
-    Send-MgcTokenToSdk -AccessToken $tokens.access_token -NoWelcome
+    # Record the active session for Invoke-MgGraphCommunityRequest + silent refresh
+    $script:MgcActiveSession = [pscustomobject]@{
+        Tokens        = $tokens
+        CacheKey      = $cacheKey
+        Authority     = $authority
+        ClientId      = $ClientId
+        TenantSegment = $tenantSegment
+        Scopes        = $resolvedScopes
+        FlowType      = $flowType
+        Persist       = [bool]$PersistRefreshToken
+    }
 
-    # Build and store context
+    # Opportunistic SDK handoff — silent no-op if Microsoft.Graph.Authentication isn't installed
+    $sdkHandoff = Send-MgcTokenToSdk -AccessToken $tokens.access_token
+
+    # Build and store the user-visible context
     $context = Set-MgcConnectionContext `
         -Tokens      $tokens `
         -FlowType    $flowType `
@@ -317,6 +329,7 @@ function Connect-MgGraphCommunity {
         -Environment $authority.Environment `
         -Scopes      $resolvedScopes `
         -Persisted:  $PersistRefreshToken
+    $context | Add-Member -NotePropertyName SdkHandoff -NotePropertyValue $sdkHandoff -Force
 
     if (-not $NoWelcome) { Show-MgcWelcomeBanner -Context $context }
     return $context

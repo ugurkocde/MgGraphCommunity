@@ -1,36 +1,41 @@
 function Send-MgcTokenToSdk {
     <#
     .SYNOPSIS
-        Hands an access token to Microsoft.Graph.Authentication's Connect-MgGraph
-        so that downstream Microsoft.Graph.* cmdlets work normally.
+        Opportunistically hands an access token to Microsoft.Graph.Authentication so
+        Microsoft.Graph.* cmdlets work, IF the SDK is installed.
+
+    .DESCRIPTION
+        MgGraphCommunity does not require the Microsoft.Graph SDK — it ships its own
+        Invoke-MgGraphCommunityRequest. But if the user happens to have
+        Microsoft.Graph.Authentication installed, we hand the token to Connect-MgGraph
+        so existing SDK-based scripts keep working in the same session.
+
+        If the SDK is not installed, this function returns silently. Nothing throws,
+        nothing prompts the user to install another module.
 
     .PARAMETER AccessToken
         Raw access token string.
-
-    .PARAMETER NoWelcome
-        Suppresses the Connect-MgGraph welcome banner (we print our own).
     #>
     [CmdletBinding()]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText','',
         Justification = 'Connect-MgGraph requires SecureString; token already in memory as plaintext.')]
     param(
-        [Parameter(Mandatory)][string]$AccessToken,
-        [switch]$NoWelcome
+        [Parameter(Mandatory)][string]$AccessToken
     )
 
     if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
-        throw "Microsoft.Graph.Authentication is not installed. Run: Install-Module Microsoft.Graph.Authentication -Scope CurrentUser"
+        Write-Verbose "Microsoft.Graph.Authentication not installed — skipping SDK handoff. Use Invoke-MgGraphCommunityRequest to call Graph directly."
+        return $false
     }
-    Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
 
-    # Avoid duplicate sessions inside the SDK
-    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
-
-    $secure = ConvertTo-SecureString $AccessToken -AsPlainText -Force
-    if ($NoWelcome) {
+    try {
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+        Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+        $secure = ConvertTo-SecureString $AccessToken -AsPlainText -Force
         Connect-MgGraph -AccessToken $secure -NoWelcome -ErrorAction Stop | Out-Null
-    } else {
-        # Always suppress the SDK banner — we print our own
-        Connect-MgGraph -AccessToken $secure -NoWelcome -ErrorAction Stop | Out-Null
+        return $true
+    } catch {
+        Write-Verbose "SDK handoff failed (non-fatal): $_"
+        return $false
     }
 }

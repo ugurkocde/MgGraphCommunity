@@ -4,6 +4,22 @@ All notable changes to MgGraphCommunity are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-05-25
+
+The module is now fully self-contained — no required modules.
+
+### Added
+- **`Invoke-MgGraphCommunityRequest`** — a pure-PowerShell drop-in for `Invoke-MgGraphRequest`. Supports relative URIs (`/me`), full URLs, `-Beta`, `-FollowPagination` (walks `@odata.nextLink`), custom `-Body` (auto-JSON), custom `-Headers`, and `-OutputType PSObject|Hashtable|HttpResponse`.
+- Auto-refresh on HTTP 401 (uses cached refresh token, retries once).
+- Throttling support: honors `Retry-After` on HTTP 429.
+- Clean error surfacing: Graph `error.code` and `error.message` are extracted into the PowerShell error.
+- Short alias **`Invoke-MgcRequest`** for the new cmdlet.
+
+### Changed
+- **`Microsoft.Graph.Authentication` is no longer a required dependency.** Removed from `RequiredModules` in the manifest. `Install-Module MgGraphCommunity` installs nothing else now.
+- SDK handoff is now opportunistic: if `Microsoft.Graph.Authentication` is installed in the session we still call `Connect-MgGraph -AccessToken` so existing SDK-based scripts continue to work. If it isn't installed, we silently skip the handoff — `Invoke-MgGraphCommunityRequest` works regardless.
+- README quick start updated to use `Invoke-MgGraphCommunityRequest` instead of the SDK.
+
 ## [1.0.0] - 2026-05-25
 
 Initial community release. Drop-in alternative to `Connect-MgGraph` with full flow parity, fixing the WAM-broken interactive sign-in.

@@ -117,11 +117,34 @@ Describe 'Token cache round-trip (in-memory)' {
     }
 }
 
-Describe 'Module loads and exports the expected functions' {
-    It 'exports the three public functions' {
+Describe 'Module loads and exports the expected surface' {
+    It 'exports all public functions' {
         $m = Get-Module MgGraphCommunity
         $m.ExportedFunctions.Keys | Should -Contain 'Connect-MgGraphCommunity'
         $m.ExportedFunctions.Keys | Should -Contain 'Disconnect-MgGraphCommunity'
         $m.ExportedFunctions.Keys | Should -Contain 'Get-MgGraphCommunityContext'
+        $m.ExportedFunctions.Keys | Should -Contain 'Invoke-MgGraphCommunityRequest'
+    }
+
+    It 'exports the Invoke-MgcRequest alias' {
+        $m = Get-Module MgGraphCommunity
+        $m.ExportedAliases.Keys | Should -Contain 'Invoke-MgcRequest'
+    }
+
+    It 'has no required modules in the manifest' {
+        $manifest = Test-ModuleManifest -Path (Join-Path $script:ModuleRoot 'MgGraphCommunity.psd1')
+        $manifest.RequiredModules.Count | Should -Be 0
+    }
+}
+
+Describe 'Invoke-MgGraphCommunityRequest' {
+    BeforeAll {
+        # Force-clear any active session for these tests
+        $m = Get-Module MgGraphCommunity
+        & $m { $script:MgcActiveSession = $null }
+    }
+
+    It 'throws a clear error when no session is active' {
+        { Invoke-MgGraphCommunityRequest -Uri '/me' } | Should -Throw -ExpectedMessage '*Connect-MgGraphCommunity*'
     }
 }

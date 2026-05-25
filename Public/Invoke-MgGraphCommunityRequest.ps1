@@ -1,0 +1,210 @@
+function Invoke-MgGraphCommunityRequest {
+    <#
+    .SYNOPSIS
+        Calls a Microsoft Graph endpoint using the current MgGraphCommunity session.
+
+    .DESCRIPTION
+        A pure-PowerShell drop-in for Invoke-MgGraphRequest. Sends a request to
+        Microsoft Graph using the access token from the most recent
+        Connect-MgGraphCommunity call.
+
+        Features:
+          - Auto-prepends the Graph host for relative URIs (e.g. '/me' becomes
+            'https://graph.microsoft.com/v1.0/me').
+          - -Beta swaps the path from /v1.0 to /beta.
+          - On HTTP 401 with an Unauthorized response, attempts a single silent
+            refresh (if a refresh token is cached) and retries the call.
+          - On HTTP 429, honors the Retry-After header and retries.
+          - -FollowPagination walks @odata.nextLink and returns combined values.
+          - Surfaces Microsoft Graph error objects as PowerShell errors with
+            error.code and error.message.
+
+        Requires Connect-MgGraphCommunity to have established a session first.
+
+    .PARAMETER Method
+        HTTP method. Defaults to GET.
+
+    .PARAMETER Uri
+        Full URL (https://graph.microsoft.com/...) or a relative path
+        ('/me', 'users?$top=5'). Relative paths are prefixed with the active
+        environment's Graph host and the /v1.0 (or /beta) path.
+
+    .PARAMETER Body
+        Request body. Objects are serialized as JSON; strings are sent as-is.
+
+    .PARAMETER Headers
+        Additional HTTP headers to merge with Authorization + Content-Type.
+
+    .PARAMETER OutputType
+        'PSObject' (default) parses JSON into PowerShell objects.
+        'Hashtable' returns ConvertFrom-Json -AsHashtable.
+        'HttpResponse' returns the raw response object.
+
+    .PARAMETER FollowPagination
+        Auto-follow @odata.nextLink and merge the .value arrays across pages.
+        Returns a single combined array.
+
+    .PARAMETER Beta
+        Use the /beta endpoint instead of /v1.0 when expanding a relative URI.
+
+    .EXAMPLE
+        Invoke-MgGraphCommunityRequest -Uri '/me'
+
+    .EXAMPLE
+        Invoke-MgGraphCommunityRequest -Method GET -Uri 'https://graph.microsoft.com/beta/deviceManagement/managedDevices'
+
+    .EXAMPLE
+        Invoke-MgGraphCommunityRequest -Uri '/users?$top=5' -Beta
+
+    .EXAMPLE
+        Invoke-MgGraphCommunityRequest -Uri '/users' -FollowPagination
+        # Returns all users across all pages as a single array.
+
+    .EXAMPLE
+        Invoke-MgGraphCommunityRequest -Method POST -Uri '/groups' -Body @{
+            displayName     = 'Marketing'
+            mailEnabled     = $false
+            mailNickname    = 'marketing'
+            securityEnabled = $true
+        }
+    #>
+    [CmdletBinding()]
+    [Alias('Invoke-MgcRequest')]
+    param(
+        [ValidateSet('GET','POST','PUT','PATCH','DELETE')]
+        [string]$Method = 'GET',
+
+        [Parameter(Mandatory, Position = 0)]
+        [string]$Uri,
+
+        [object]$Body,
+
+        [hashtable]$Headers,
+
+        [ValidateSet('PSObject','Hashtable','HttpResponse')]
+        [string]$OutputType = 'PSObject',
+
+        [switch]$FollowPagination,
+
+        [switch]$Beta
+    )
+
+    if (-not $script:MgcActiveSession) {
+        throw "Not connected. Run Connect-MgGraphCommunity first."
+    }
+
+    # Resolve relative URIs against the active environment
+    $resolvedUri = if ($Uri -match '^https?://') {
+        $Uri
+    } else {
+        $apiVer  = if ($Beta) { 'beta' } else { 'v1.0' }
+        $cleaned = $Uri.TrimStart('/')
+        "{0}/{1}/{2}" -f $script:MgcActiveSession.Authority.GraphResource, $apiVer, $cleaned
+    }
+
+    # Build the request closure (so we can call it twice: once, and again after a refresh)
+    $sendRequest = {
+        param([string]$accessToken)
+
+        $mergedHeaders = @{
+            'Authorization' = "Bearer $accessToken"
+            'Content-Type'  = 'application/json'
+        }
+        if ($Headers) {
+            foreach ($k in $Headers.Keys) { $mergedHeaders[$k] = $Headers[$k] }
+        }
+
+        $params = @{
+            Uri                = $resolvedUri
+            Method             = $Method
+            Headers            = $mergedHeaders
+            ErrorAction        = 'Stop'
+            SkipHttpErrorCheck = $true
+            StatusCodeVariable = 'sc'
+        }
+
+        if ($PSBoundParameters.ContainsKey('Body') -and $null -ne $Body) {
+            $params['Body'] = if ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 20 -Compress }
+        }
+
+        $response = Invoke-WebRequest @params
+        [pscustomobject]@{ StatusCode = $sc; Response = $response }
+    }
+
+    # ---- First attempt ----
+    $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
+
+    # ---- Retry on 401: refresh once if possible ----
+    if ($attempt.StatusCode -eq 401 -and $script:MgcActiveSession.Tokens.refresh_token) {
+        Write-Verbose "401 from Graph — attempting silent token refresh."
+        try {
+            $newTokens = Invoke-MgcRefreshTokenAuth `
+                -LoginEndpoint $script:MgcActiveSession.Authority.Login `
+                -TenantSegment $script:MgcActiveSession.TenantSegment `
+                -ClientId      $script:MgcActiveSession.ClientId `
+                -RefreshToken  $script:MgcActiveSession.Tokens.refresh_token `
+                -Scopes        $script:MgcActiveSession.Scopes
+            $script:MgcActiveSession.Tokens = $newTokens
+            Save-MgcTokenCache -Key $script:MgcActiveSession.CacheKey -Tokens $newTokens -Persist:$script:MgcActiveSession.Persist
+            $attempt = & $sendRequest -accessToken $newTokens.access_token
+        } catch {
+            Write-Verbose "Silent refresh failed: $_"
+        }
+    }
+
+    # ---- Retry on 429: respect Retry-After ----
+    if ($attempt.StatusCode -eq 429) {
+        $wait = 5
+        $hdr  = $attempt.Response.Headers['Retry-After']
+        if ($hdr) { try { $wait = [int]([array]$hdr)[0] } catch { } }
+        Write-Verbose "429 throttled by Graph — sleeping $wait seconds before retry."
+        Start-Sleep -Seconds $wait
+        $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
+    }
+
+    # ---- Error handling ----
+    if ($attempt.StatusCode -ge 400) {
+        $msg = "HTTP $($attempt.StatusCode) from $resolvedUri"
+        try {
+            $errBody = [System.Text.Encoding]::UTF8.GetString($attempt.Response.Content) | ConvertFrom-Json -ErrorAction Stop
+            if ($errBody.error) {
+                $msg = "Graph error $($attempt.StatusCode) [$($errBody.error.code)]: $($errBody.error.message)"
+            }
+        } catch {
+            # leave default message
+        }
+        throw $msg
+    }
+
+    if ($OutputType -eq 'HttpResponse') { return $attempt.Response }
+
+    # Parse JSON response
+    $contentType = $attempt.Response.Headers['Content-Type']
+    $isJson = $contentType -and ($contentType -join ' ') -match 'json'
+    $raw = if ($attempt.Response.Content) {
+        [System.Text.Encoding]::UTF8.GetString($attempt.Response.Content)
+    } else { $null }
+
+    if (-not $raw) { return $null }
+    if (-not $isJson) { return $raw }
+
+    $parsed = if ($OutputType -eq 'Hashtable') {
+        $raw | ConvertFrom-Json -AsHashtable
+    } else {
+        $raw | ConvertFrom-Json
+    }
+
+    # ---- Pagination ----
+    if ($FollowPagination -and $parsed.value -and ($parsed.PSObject.Properties.Name -contains '@odata.nextLink' -or $parsed.'@odata.nextLink')) {
+        $all = @($parsed.value)
+        $next = $parsed.'@odata.nextLink'
+        while ($next) {
+            $page = Invoke-MgGraphCommunityRequest -Method GET -Uri $next -OutputType $OutputType
+            if ($page.value) { $all += $page.value }
+            $next = $page.'@odata.nextLink'
+        }
+        return $all
+    }
+
+    return $parsed
+}

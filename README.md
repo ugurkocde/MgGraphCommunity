@@ -23,10 +23,12 @@
 ```powershell
 Install-Module MgGraphCommunity -Scope CurrentUser
 Connect-MgGraphCommunity
-Get-MgUser -Top 5   # all Microsoft.Graph cmdlets keep working
+Invoke-MgGraphCommunityRequest -Method GET -Uri 'https://graph.microsoft.com/beta/me'
 ```
 
-That's it. Browser opens, you sign in, you're connected.
+That's it. One install. Browser opens, you sign in, you call Graph. **No `Microsoft.Graph.*` modules required.**
+
+> Already have `Microsoft.Graph.Authentication` installed? Your `Get-MgUser`, `Invoke-MgGraphRequest`, etc. keep working too — we hand off the token opportunistically.
 
 ## Why this exists
 
@@ -66,7 +68,7 @@ Sovereign clouds: pass `-Environment Global|USGov|USGovDoD|China`.
 | Behavior                          | Connect-MgGraph (SDK)             | MgGraphCommunity                                  |
 |-----------------------------------|-----------------------------------|---------------------------------------------------|
 | Interactive sign-in on Windows    | WAM (broken for secondary accts)  | System browser + PKCE                             |
-| Dependency                        | MSAL (`Microsoft.Identity.Client`)| None beyond `Microsoft.Graph.Authentication`      |
+| Dependencies                      | MSAL (`Microsoft.Identity.Client`)| **None**                                          |
 | Token persistence default         | DPAPI via MSAL, no opt-out flag   | In-memory only; disk persistence opt-in           |
 | Compiled assemblies               | Yes                               | None — pure PowerShell                            |
 | Cold start                        | Slower (MSAL load)                | Fast                                              |
@@ -75,7 +77,8 @@ Sovereign clouds: pass `-Environment Global|USGov|USGovDoD|China`.
 ## Requirements
 
 - PowerShell 7.0 or later
-- `Microsoft.Graph.Authentication` (used only for the final `Connect-MgGraph -AccessToken` handoff)
+- **That's it.** No `Microsoft.Graph.*` modules, no MSAL, no anything else.
+- If `Microsoft.Graph.Authentication` happens to be installed in your session we hand off the token to `Connect-MgGraph` so existing SDK-based scripts (`Get-MgUser`, `Invoke-MgGraphRequest`, etc.) keep working — but this is purely a convenience, never required.
 
 ## Install (from this repo)
 
@@ -103,8 +106,26 @@ Connect-MgGraphCommunity -Scopes 'NewScope.Read.All' -ForceConsent
 # Persist refresh token to disk (silent re-auth across sessions)
 Connect-MgGraphCommunity -PersistRefreshToken
 
-# Use existing Microsoft.Graph cmdlets after connect
+# Call Graph endpoints directly (no SDK needed)
+Invoke-MgGraphCommunityRequest -Method GET -Uri '/me'                    # relative URI (defaults to /v1.0)
+Invoke-MgGraphCommunityRequest -Method GET -Uri '/me' -Beta              # /beta endpoint
+Invoke-MgGraphCommunityRequest -Method GET -Uri 'https://graph.microsoft.com/beta/deviceManagement/managedDevices'
+Invoke-MgGraphCommunityRequest -Method GET -Uri '/users' -FollowPagination   # walks @odata.nextLink, returns all pages
+
+# Create something
+Invoke-MgGraphCommunityRequest -Method POST -Uri '/groups' -Body @{
+    displayName     = 'Marketing'
+    mailEnabled     = $false
+    mailNickname    = 'marketing'
+    securityEnabled = $true
+}
+
+# Short alias if you don't want to type the full name
+Invoke-MgcRequest -Uri '/me'
+
+# If you also have Microsoft.Graph.Authentication installed, the official cmdlets also work
 Get-MgUser -Top 5
+Invoke-MgGraphRequest -Method GET -Uri '/me'
 
 # Disconnect (also clears in-memory cache)
 Disconnect-MgGraphCommunity

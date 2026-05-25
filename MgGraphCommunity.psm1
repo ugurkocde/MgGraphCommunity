@@ -6,8 +6,9 @@
 $ErrorActionPreference = 'Stop'
 
 # In-memory connection + token cache state, scoped to the module session.
-$script:MgcContext = $null
-$script:MgcMemoryCache = @{}
+$script:MgcContext       = $null
+$script:MgcMemoryCache   = @{}
+$script:MgcActiveSession = $null   # holds tokens + refresh metadata for the live session
 
 # Load order: Common -> Cache -> State -> Sdk -> Auth -> Public
 $privateFolders = @('Common','Cache','State','Sdk','Auth')
@@ -27,4 +28,6 @@ if (Test-Path $publicPath) {
     foreach ($f in $publicFiles) { . $f.FullName }
 }
 
-Export-ModuleMember -Function ($publicFiles | ForEach-Object { $_.BaseName })
+Export-ModuleMember `
+    -Function ($publicFiles | ForEach-Object { $_.BaseName }) `
+    -Alias    @('Invoke-MgcRequest')

@@ -12,7 +12,8 @@ function Disconnect-MgGraphCommunity {
     )
 
     Clear-MgcTokenCache -IncludeDisk:$ClearCache
-    $script:MgcContext = $null
+    $script:MgcContext       = $null
+    $script:MgcActiveSession = $null
 
     try {
         if (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication) {
