@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: Pester
+  test-ps7:
+    name: PS 7 (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -39,12 +39,49 @@ jobs:
           $config.Output.Verbosity = 'Detailed'
           $config.Run.Exit = $true
           $config.TestResult.Enabled = $true
-          $config.TestResult.OutputPath = './TestResults.xml'
+          $config.TestResult.OutputPath = './TestResults-ps7.xml'
           Invoke-Pester -Configuration $config
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.os }}
-          path: TestResults.xml
+          name: test-results-ps7-${{ matrix.os }}
+          path: TestResults-ps7.xml
+
+  test-ps51:
+    name: Windows PowerShell 5.1
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pester 5 (PS 5.1)
+        shell: powershell
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          if (-not (Get-Module -ListAvailable Pester | Where-Object { $_.Version -ge '5.0.0' })) {
+            Install-Module Pester -Scope CurrentUser -Force -SkipPublisherCheck -MinimumVersion 5.0.0
+          }
+          Get-Module -ListAvailable Pester | Select-Object Name, Version
+
+      - name: Run Pester smoke tests (PS 5.1)
+        shell: powershell
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+          $config = New-PesterConfiguration
+          $config.Run.Path = './Tests'
+          $config.Output.Verbosity = 'Detailed'
+          $config.Run.Exit = $true
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputPath = './TestResults-ps51.xml'
+          Invoke-Pester -Configuration $config
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-ps51
+          path: TestResults-ps51.xml

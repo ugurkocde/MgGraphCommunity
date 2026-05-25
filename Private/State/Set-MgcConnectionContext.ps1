@@ -26,11 +26,20 @@ function Set-MgcConnectionContext {
     $appName     = $null
     $tokenScopes = $null
 
+    # Helper: first non-null/non-empty value (cross-version safe; PS 5.1 has no ??)
+    $firstNonEmpty = {
+        param([Parameter(ValueFromRemainingArguments)]$values)
+        foreach ($v in $values) {
+            if ($null -ne $v -and -not ([string]::IsNullOrEmpty([string]$v))) { return $v }
+        }
+        return $null
+    }
+
     try {
-        $claims = ConvertFrom-MgcJwt -Token $Tokens.access_token
-        $account     = $claims.upn      ?? $claims.preferred_username ?? $claims.unique_name ?? $claims.email
+        $claims      = ConvertFrom-MgcJwt -Token $Tokens.access_token
+        $account     = & $firstNonEmpty $claims.upn $claims.preferred_username $claims.unique_name $claims.email
         $issuedTid   = $claims.tid
-        $appName     = $claims.app_displayname ?? $claims.appid
+        $appName     = & $firstNonEmpty $claims.app_displayname $claims.appid
         if ($claims.exp) {
             $expiresOn = [DateTimeOffset]::FromUnixTimeSeconds([int64]$claims.exp).LocalDateTime
         }
@@ -44,11 +53,14 @@ function Set-MgcConnectionContext {
         $expiresOn = (Get-Date).AddSeconds([int]$Tokens.expires_in)
     }
 
+    $resolvedTenant = if ($issuedTid) { $issuedTid } else { $TenantId }
+    $resolvedScopes = if ($tokenScopes) { $tokenScopes } else { $Scopes }
+
     $script:MgcContext = [pscustomobject]@{
         Account     = $account
         AppName     = $appName
-        TenantId    = ($issuedTid ?? $TenantId)
-        Scopes      = ($tokenScopes ?? $Scopes)
+        TenantId    = $resolvedTenant
+        Scopes      = $resolvedScopes
         AuthType    = $FlowType
         FlowType    = $FlowType
         Environment = $Environment

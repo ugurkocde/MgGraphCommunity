@@ -34,7 +34,9 @@ function Save-MgcTokenCache {
 
     $payload = $Tokens | ConvertTo-Json -Compress -Depth 5
 
-    if ($IsWindows) {
+    # Cross-version safe: Test-MgcIsWindows replaces $IsWindows (PS 6+ only).
+    $onWindows = Test-MgcIsWindows
+    if ($onWindows) {
         $secure    = ConvertTo-SecureString -String $payload -AsPlainText -Force
         $encrypted = ConvertFrom-SecureString -SecureString $secure
         $entry     = [pscustomobject]@{ encrypted = $true;  data = $encrypted; saved = (Get-Date).ToString('o') }
@@ -55,7 +57,7 @@ function Save-MgcTokenCache {
 
     $cache | ConvertTo-Json -Depth 6 | Set-Content -Path $cacheFile -NoNewline
 
-    if (-not $IsWindows) {
+    if (-not $onWindows) {
         try { & chmod 600 $cacheFile } catch { Write-Verbose "chmod 600 failed: $_" }
     }
 }

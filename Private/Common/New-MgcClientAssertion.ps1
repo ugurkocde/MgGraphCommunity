@@ -40,7 +40,13 @@ function New-MgcClientAssertion {
     }
 
     # x5t = base64url(SHA-1(cert raw bytes)) per RFC 7515
-    $thumbHash = [System.Security.Cryptography.SHA1]::HashData($Certificate.RawData)
+    # Cross-version safe: use Create()+ComputeHash instead of PS 7.1+ [SHA1]::HashData.
+    $sha1 = [System.Security.Cryptography.SHA1]::Create()
+    try {
+        $thumbHash = $sha1.ComputeHash($Certificate.RawData)
+    } finally {
+        $sha1.Dispose()
+    }
     $x5t = [Convert]::ToBase64String($thumbHash).TrimEnd('=').Replace('+','-').Replace('/','_')
 
     $header = [ordered]@{

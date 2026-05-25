@@ -142,22 +142,18 @@ function Invoke-MgGraphCommunityRequest {
         }
 
         $params = @{
-            Uri                = $resolvedUri
-            Method             = $Method
-            Headers            = $mergedHeaders
-            ErrorAction        = 'Stop'
-            SkipHttpErrorCheck = $true
+            Uri     = $resolvedUri
+            Method  = $Method
+            Headers = $mergedHeaders
         }
 
         if ($PSBoundParameters.ContainsKey('Body') -and $null -ne $Body) {
             $params['Body'] = if ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 20 -Compress }
         }
 
-        $response = Invoke-WebRequest @params
-        # Read status code directly from the response (works on PS 7.0+).
-        # -StatusCodeVariable is PS 7.4+ only and would break older runtimes.
-        $statusInt = [int]$response.StatusCode
-        [pscustomobject]@{ StatusCode = $statusInt; Response = $response }
+        # Invoke-MgcHttpRequest abstracts -SkipHttpErrorCheck differences across
+        # PS 5.1 vs 7.x and returns a uniform { StatusCode; Headers; Content } object.
+        Invoke-MgcHttpRequest -Parameters $params
     }
 
     # ---- First attempt ----
@@ -185,8 +181,9 @@ function Invoke-MgGraphCommunityRequest {
     # ---- Retry on 429: respect Retry-After ----
     if ($attempt.StatusCode -eq 429) {
         $wait = 5
-        $hdr  = $attempt.Response.Headers['Retry-After']
-        if ($hdr) { try { $wait = [int]([array]$hdr)[0] } catch { } }
+        if ($attempt.Headers -and $attempt.Headers['Retry-After']) {
+            try { $wait = [int]([array]$attempt.Headers['Retry-After'])[0] } catch { }
+        }
         Write-Verbose "429 throttled by Graph — sleeping $wait seconds before retry."
         Start-Sleep -Seconds $wait
         $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
@@ -199,25 +196,12 @@ function Invoke-MgGraphCommunityRequest {
         $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
     }
 
-    # Helper: read response body as a string regardless of whether the underlying
-    # runtime returned byte[] (PS 7.0-7.3) or string (PS 7.4+).
-    $readBodyString = {
-        param($resp)
-        if (-not $resp -or $null -eq $resp.Content) { return $null }
-        if ($resp.Content -is [byte[]]) {
-            if ($resp.Content.Length -eq 0) { return $null }
-            return [System.Text.Encoding]::UTF8.GetString($resp.Content)
-        }
-        return [string]$resp.Content
-    }
-
     # ---- Error handling ----
     if ($attempt.StatusCode -ge 400) {
         $msg = "HTTP $($attempt.StatusCode) from $resolvedUri"
         try {
-            $errRaw = & $readBodyString $attempt.Response
-            if ($errRaw) {
-                $errBody = $errRaw | ConvertFrom-Json -ErrorAction Stop
+            if ($attempt.Content) {
+                $errBody = $attempt.Content | ConvertFrom-Json -ErrorAction Stop
                 if ($errBody.error) {
                     $msg = "Graph error $($attempt.StatusCode) [$($errBody.error.code)]: $($errBody.error.message)"
                 }
@@ -226,24 +210,31 @@ function Invoke-MgGraphCommunityRequest {
         throw $msg
     }
 
-    if ($OutputType -eq 'HttpResponse') { return $attempt.Response }
+    if ($OutputType -eq 'HttpResponse') { return $attempt }
 
     # Parse JSON response
-    $contentType = $attempt.Response.Headers['Content-Type']
+    $contentType = $null
+    if ($attempt.Headers) { $contentType = $attempt.Headers['Content-Type'] }
     $isJson = $contentType -and ($contentType -join ' ') -match 'json'
-    $raw = & $readBodyString $attempt.Response
+    $raw    = $attempt.Content
 
     if (-not $raw) { return $null }
     if (-not $isJson) { return $raw }
 
+    # ConvertFrom-Json -AsHashtable is PS 6+; on PS 5.1 we convert PSObject -> Hashtable manually.
     $parsed = if ($OutputType -eq 'Hashtable') {
-        $raw | ConvertFrom-Json -AsHashtable
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            $raw | ConvertFrom-Json -AsHashtable
+        } else {
+            $raw | ConvertFrom-Json | ConvertTo-MgcHashtable
+        }
     } else {
         $raw | ConvertFrom-Json
     }
 
     # ---- Pagination ----
-    if ($FollowPagination -and $parsed.value -and ($parsed.PSObject.Properties.Name -contains '@odata.nextLink' -or $parsed.'@odata.nextLink')) {
+    # Works whether $parsed is a Hashtable (PS 5.1 fallback) or a PSCustomObject.
+    if ($FollowPagination -and $parsed.value -and $parsed.'@odata.nextLink') {
         $all = @($parsed.value)
         $next = $parsed.'@odata.nextLink'
         while ($next) {

@@ -42,7 +42,11 @@ function Invoke-MgcManagedIdentityAuth {
     # 2. Azure Arc
     if ($env:IMDS_ENDPOINT -and $env:IDENTITY_ENDPOINT) {
         $uri = "$($env:IDENTITY_ENDPOINT)?resource=$([Uri]::EscapeDataString($resource))&api-version=2019-11-01"
-        $first = Invoke-WebRequest -Uri $uri -Headers @{ Metadata = 'true' } -Method GET -SkipHttpErrorCheck
+        $first = Invoke-MgcHttpRequest -Parameters @{
+            Uri     = $uri
+            Headers = @{ Metadata = 'true' }
+            Method  = 'GET'
+        }
         # Arc returns 401 + WWW-Authenticate header pointing at a challenge file
         if ($first.StatusCode -eq 401) {
             $authHeader = $first.Headers['WWW-Authenticate']

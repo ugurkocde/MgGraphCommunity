@@ -4,6 +4,27 @@ All notable changes to MgGraphCommunity are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-05-25
+
+The module now runs on Windows PowerShell 5.1 in addition to PowerShell 7+.
+
+### Added
+- Windows PowerShell 5.1 support. Manifest declares `PowerShellVersion = '5.1'` and `CompatiblePSEditions = @('Desktop','Core')`.
+- TLS 1.2 is auto-enabled on PowerShell 5.1 at module load (PS 5.1 still defaults to TLS 1.0/1.1 on most systems, which Graph rejects).
+- New cross-version helpers: `Invoke-MgcHttpRequest` (abstracts `-SkipHttpErrorCheck`), `ConvertFrom-MgcSecureString` (BSTR marshal pattern for plaintext), `ConvertTo-MgcHashtable` (PS 5.1 fallback for `ConvertFrom-Json -AsHashtable`), `Test-MgcIsWindows` (replaces `$IsWindows`).
+
+### Changed
+- Replaced PS 7-only constructs throughout the codebase:
+  - Null-coalescing (`??`) → first-non-empty helper in `Set-MgcConnectionContext`.
+  - `[SHA256]::HashData`, `[SHA1]::HashData`, `[RandomNumberGenerator]::Fill` (PS 7.1+ static methods on .NET 5+) → `Create() + ComputeHash` / `Create() + GetBytes` (work on .NET Framework 4.x).
+  - `ConvertFrom-SecureString -AsPlainText` → `ConvertFrom-MgcSecureString`.
+  - `ConvertFrom-Json -AsHashtable` → falls back to `ConvertTo-MgcHashtable` on PS 5.1.
+  - `Invoke-WebRequest -SkipHttpErrorCheck` → routed through `Invoke-MgcHttpRequest`.
+  - `$IsWindows` → `Test-MgcIsWindows`.
+
+### Notes
+- All existing tests still pass on PowerShell 7+. The cross-version refactor is purely additive at the API level.
+
 ## [1.2.1] - 2026-05-25
 
 ### Fixed

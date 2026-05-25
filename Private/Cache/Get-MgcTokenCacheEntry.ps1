@@ -31,7 +31,8 @@ function Get-MgcTokenCacheEntry {
 
         if ($entry.encrypted) {
             $secure  = ConvertTo-SecureString -String $entry.data
-            $payload = ConvertFrom-SecureString -SecureString $secure -AsPlainText
+            # Cross-version safe: ConvertFrom-SecureString -AsPlainText is PS 7+ only.
+            $payload = ConvertFrom-MgcSecureString -SecureString $secure
         } else {
             $payload = $entry.data
         }

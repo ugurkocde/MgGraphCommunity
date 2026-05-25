@@ -1,9 +1,20 @@
-#Requires -Version 7.0
-
 # Module root: dot-sources Private (load order matters) and Public (autodetect).
-# Only Public functions are exported via the manifest.
+# Only Public functions are exported via the manifest. Supports Windows PowerShell 5.1 and PowerShell 7+.
 
 $ErrorActionPreference = 'Stop'
+
+# Force TLS 1.2 on Windows PowerShell 5.1, which still defaults to TLS 1.0/1.1
+# (Microsoft Graph token + Graph endpoints require TLS 1.2 minimum).
+if ($PSVersionTable.PSEdition -eq 'Desktop') {
+    try {
+        $current = [System.Net.ServicePointManager]::SecurityProtocol
+        if (-not ($current -band [System.Net.SecurityProtocolType]::Tls12)) {
+            [System.Net.ServicePointManager]::SecurityProtocol = $current -bor [System.Net.SecurityProtocolType]::Tls12
+        }
+    } catch {
+        Write-Verbose "Failed to set TLS 1.2 (non-fatal): $_"
+    }
+}
 
 # In-memory connection + token cache state, scoped to the module session.
 $script:MgcContext        = $null

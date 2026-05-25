@@ -8,11 +8,19 @@ function New-MgcPkcePair {
     [CmdletBinding()]
     param()
 
+    # Cross-version safe: use Create()+GetBytes / ComputeHash instead of PS 7.1+
+    # static methods [RandomNumberGenerator]::Fill / [SHA256]::HashData (.NET 5+).
     $verifierBytes = [byte[]]::new(32)
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($verifierBytes)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($verifierBytes) } finally { $rng.Dispose() }
     $verifier = [Convert]::ToBase64String($verifierBytes).TrimEnd('=').Replace('+','-').Replace('/','_')
 
-    $hash = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($verifier))
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($verifier))
+    } finally {
+        $sha.Dispose()
+    }
     $challenge = [Convert]::ToBase64String($hash).TrimEnd('=').Replace('+','-').Replace('/','_')
 
     return [pscustomobject]@{

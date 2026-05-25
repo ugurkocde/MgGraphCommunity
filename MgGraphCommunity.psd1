@@ -1,12 +1,13 @@
 @{
     RootModule           = 'MgGraphCommunity.psm1'
-    ModuleVersion        = '1.2.1'
+    ModuleVersion        = '1.3.0'
     GUID                 = 'a7c1f4b8-5d20-4e6e-9a3b-2e8f0d1c7b42'
     Author               = 'MgGraphCommunity contributors'
     CompanyName          = 'Community'
     Copyright            = '(c) MgGraphCommunity contributors. Licensed under MIT.'
     Description          = 'A self-contained, community-maintained drop-in alternative to Connect-MgGraph. Pure-PowerShell OAuth 2.0 flows (PKCE, device code, client credentials, certificate, managed identity, BYO token) plus its own Invoke-MgGraphCommunityRequest for calling Graph endpoints. No required dependencies. No WAM. No MSAL.'
-    PowerShellVersion    = '7.1'
+    PowerShellVersion    = '5.1'
+    CompatiblePSEditions = @('Desktop','Core')
 
     # No required modules — MgGraphCommunity is fully self-contained.
     # If Microsoft.Graph.Authentication happens to be installed, we hand off
@@ -31,6 +32,20 @@
             LicenseUri   = 'https://github.com/ugurkocde/MgGraphCommunity/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/ugurkocde/MgGraphCommunity'
             ReleaseNotes = @'
+1.3.0
+- Cross-version support: module now runs on Windows PowerShell 5.1 in addition to PowerShell 7+.
+  CompatiblePSEditions = Desktop, Core. PowerShellVersion = 5.1.
+- Replaced PS 7-only constructs with cross-version equivalents:
+  * Null-coalescing (??) -> first-non-empty helper in Set-MgcConnectionContext.
+  * [SHA256]::HashData / [SHA1]::HashData / [RandomNumberGenerator]::Fill (PS 7.1+ static methods)
+    replaced with Create()+ComputeHash / Create()+GetBytes that work in .NET Framework 4.x.
+  * ConvertFrom-SecureString -AsPlainText replaced with Marshal BSTR round-trip.
+  * ConvertFrom-Json -AsHashtable falls back to manual PSObject->Hashtable conversion on PS 5.1.
+  * Invoke-WebRequest -SkipHttpErrorCheck abstracted behind new private Invoke-MgcHttpRequest
+    helper that catches WebException on PS 5.1 and exposes a uniform response.
+  * $IsWindows replaced with Test-MgcIsWindows helper.
+- Module auto-enables TLS 1.2 on PowerShell 5.1 (PS 5.1 still defaults to TLS 1.0/1.1).
+
 1.2.1
 - Hotfix: Invoke-MgGraphCommunityRequest crashed on PowerShell 7.4+ with
   "Cannot convert ... GetString to type System.Byte[]". On PS 7.4+, Invoke-WebRequest
