@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="MgGraphCommunity — A drop-in for Connect-MgGraph. No WAM. No MSAL. No SDK black box." width="100%">
+  <img src="assets/banner.svg" alt="MgGraphCommunity: A drop-in for Connect-MgGraph. No WAM. No MSAL. No SDK black box." width="100%">
 </p>
 
 <h1 align="center">MgGraphCommunity</h1>
@@ -13,7 +13,7 @@
   <a href="https://www.powershellgallery.com/packages/MgGraphCommunity"><img alt="PowerShell Gallery version" src="https://img.shields.io/powershellgallery/v/MgGraphCommunity?color=2b6cb0&label=PSGallery&logo=powershell&logoColor=white&style=flat-square"></a>
   <a href="https://www.powershellgallery.com/packages/MgGraphCommunity"><img alt="PowerShell Gallery downloads" src="https://img.shields.io/powershellgallery/dt/MgGraphCommunity?color=4c9a2a&label=downloads&logo=powershell&logoColor=white&style=flat-square"></a>
   <a href="https://github.com/ugurkocde/MgGraphCommunity/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/ugurkocde/MgGraphCommunity?color=6c757d&style=flat-square"></a>
-  <a href="https://learn.microsoft.com/powershell/scripting/install/installing-powershell"><img alt="PowerShell 7+" src="https://img.shields.io/badge/PowerShell-7%2B-5391FE?logo=powershell&logoColor=white&style=flat-square"></a>
+  <a href="https://learn.microsoft.com/powershell/scripting/install/installing-powershell"><img alt="PowerShell 5.1+" src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white&style=flat-square"></a>
 </p>
 
 > Same flows. Working interactive. Safer-by-default cache. No SDK black box.
@@ -28,9 +28,9 @@ Invoke-MgGraphCommunityRequest -Method GET -Uri "https://graph.microsoft.com/bet
 
 That's it. One install. Browser opens, you sign in, you call Graph. **No `Microsoft.Graph.*` modules required.**
 
-> Use **double quotes** around the URI as a habit — Graph IDs use OData single quotes (`('user@contoso.com')`) which would otherwise close a single-quoted PowerShell string early.
+> Use **double quotes** around the URI as a habit. Graph IDs use OData single quotes (`('user@contoso.com')`) which would otherwise close a single-quoted PowerShell string early.
 
-> Already have `Microsoft.Graph.Authentication` installed? Your `Get-MgUser`, `Invoke-MgGraphRequest`, etc. keep working too — we hand off the token opportunistically.
+> Already have `Microsoft.Graph.Authentication` installed? Your `Get-MgUser`, `Invoke-MgGraphRequest`, etc. keep working too, because we hand off the token opportunistically.
 
 ## Why this exists
 
@@ -40,7 +40,7 @@ Starting in `Microsoft.Graph` v2.34, the SDK made the **Windows Account Manager 
 - The classic interactive authorization-code flow (system browser, loopback redirect) is unreachable from the SDK's interactive path.
 - For admins managing multiple tenants from one workstation, this is a real productivity and security regression.
 
-**There was no announcement from Microsoft about this change.** No blog post, no release-notes call-out, no migration guide — it landed quietly and admins discovered it by way of broken workflows.
+**There was no announcement from Microsoft about this change.** No blog post, no release-notes call-out, no migration guide. It landed quietly and admins discovered it by way of broken workflows.
 
 The most reliable record of what changed, why, and how the community and Microsoft engineers have been discussing it is this single GitHub issue:
 
@@ -50,11 +50,11 @@ If you want context on the problem this module exists to solve, start there.
 
 ## What it does
 
-`MgGraphCommunity` ships a single cmdlet, `Connect-MgGraphCommunity`, that supports every flow `Connect-MgGraph` supports — implemented as pure PowerShell against the Microsoft identity platform v2 endpoints. After acquiring a token it hands it to `Connect-MgGraph -AccessToken`, so all existing `Microsoft.Graph.*` cmdlets keep working unchanged.
+`MgGraphCommunity` ships a single cmdlet, `Connect-MgGraphCommunity`, that supports every flow `Connect-MgGraph` supports, implemented as pure PowerShell against the Microsoft identity platform v2 endpoints. After acquiring a token it hands it to `Connect-MgGraph -AccessToken`, so all existing `Microsoft.Graph.*` cmdlets keep working unchanged.
 
 | Flow                 | How to invoke                                               |
 |----------------------|-------------------------------------------------------------|
-| Interactive (PKCE)   | `Connect-MgGraphCommunity` *(default — no WAM)*             |
+| Interactive (PKCE)   | `Connect-MgGraphCommunity` *(default, no WAM)*              |
 | Device Code          | `Connect-MgGraphCommunity -UseDeviceCode`                   |
 | Client Secret        | `Connect-MgGraphCommunity -ClientSecretCredential $cred`    |
 | Certificate (X509)   | `Connect-MgGraphCommunity -Certificate $cert`               |
@@ -67,7 +67,7 @@ Sovereign clouds: pass `-Environment Global|USGov|USGovDoD|China`.
 
 ## Comparison
 
-How MgGraphCommunity stacks up against the closest alternatives. This is the honest version — picking your tool should be a decision, not a sales pitch.
+How MgGraphCommunity stacks up against the closest alternatives. This is the honest version, because picking your tool should be a decision, not a sales pitch.
 
 | | **Microsoft.Graph SDK** | **MSGraphRequest** | **MgGraphCommunity** |
 |---|---|---|---|
@@ -95,17 +95,17 @@ How MgGraphCommunity stacks up against the closest alternatives. This is the hon
 
 ### When to pick which
 
-- **Microsoft.Graph SDK** — pick when you want typed cmdlets per endpoint (`Get-MgUser`, `New-MgGroup`, ...), your interactive sign-in isn't broken (Linux/macOS, or you don't mind WAM), and you accept the always-on persistent token cache.
-- **MSGraphRequest** — pick when you're already using it. The team has 5+ years of production trust; for most workloads it's solid. Just be aware that interactive listener blocks forever and sovereign clouds aren't supported in the request layer.
-- **MgGraphCommunity** — pick when you want the smallest possible install (`Install-Module MgGraphCommunity` and nothing else), WAM-free interactive on Windows, dynamic scopes per call, sovereign-cloud support at every layer, and the safer-by-default in-memory cache posture. URIs match what you copy from the Graph Explorer browser network tab — no `-Resource` splitting required.
+- **Microsoft.Graph SDK**: pick when you want typed cmdlets per endpoint (`Get-MgUser`, `New-MgGroup`, ...), your interactive sign-in isn't broken (Linux/macOS, or you don't mind WAM), and you accept the always-on persistent token cache.
+- **MSGraphRequest**: pick when you're already using it. The team has 5+ years of production trust; for most workloads it's solid. Just be aware that interactive listener blocks forever and sovereign clouds aren't supported in the request layer.
+- **MgGraphCommunity**: pick when you want the smallest possible install (`Install-Module MgGraphCommunity` and nothing else), WAM-free interactive on Windows, dynamic scopes per call, sovereign-cloud support at every layer, and the safer-by-default in-memory cache posture. URIs match what you copy from the Graph Explorer browser network tab, with no `-Resource` splitting required.
 
-If you also need a permission-scanning tool with its own GUI, look at [M365Permissions](https://github.com/jflieben/M365Permissions) — different scope, but the same project philosophy.
+If you also need a permission-scanning tool with its own GUI, look at [M365Permissions](https://github.com/jflieben/M365Permissions): different scope, but the same project philosophy.
 
 ## Requirements
 
-- PowerShell 7.0 or later
+- Windows PowerShell 5.1 or PowerShell 7+ (v1.3.0 added 5.1 support; the module auto-enables TLS 1.2 on 5.1).
 - **That's it.** No `Microsoft.Graph.*` modules, no MSAL, no anything else.
-- If `Microsoft.Graph.Authentication` happens to be installed in your session we hand off the token to `Connect-MgGraph` so existing SDK-based scripts (`Get-MgUser`, `Invoke-MgGraphRequest`, etc.) keep working — but this is purely a convenience, never required.
+- If `Microsoft.Graph.Authentication` happens to be installed in your session we hand off the token to `Connect-MgGraph` so existing SDK-based scripts (`Get-MgUser`, `Invoke-MgGraphRequest`, etc.) keep working, but this is purely a convenience, never required.
 
 ## Usage
 
@@ -195,7 +195,7 @@ App reg setup:
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 ## Credits
 

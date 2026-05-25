@@ -28,7 +28,7 @@ The module now runs on Windows PowerShell 5.1 in addition to PowerShell 7+.
 ## [1.2.1] - 2026-05-25
 
 ### Fixed
-- `Invoke-MgGraphCommunityRequest` crashed on PowerShell 7.4+ with `Cannot convert argument "bytes" ... to type System.Byte[]`. On PowerShell 7.4+, `Invoke-WebRequest`'s `Content` property is a string for text/JSON responses, not a byte array — calling `[Encoding]::UTF8.GetString($content)` blew up. The cmdlet now detects the shape of `Content` and handles both byte[] (PS 7.1–7.3) and string (PS 7.4+) responses. Same fix applied to the error-body parsing path.
+- `Invoke-MgGraphCommunityRequest` crashed on PowerShell 7.4+ with `Cannot convert argument "bytes" ... to type System.Byte[]`. On PowerShell 7.4+, `Invoke-WebRequest`'s `Content` property is a string for text/JSON responses, not a byte array. Calling `[Encoding]::UTF8.GetString($content)` blew up. The cmdlet now detects the shape of `Content` and handles both byte[] (PS 7.1–7.3) and string (PS 7.4+) responses. Same fix applied to the error-body parsing path.
 
 ## [1.2.0] - 2026-05-25
 
@@ -49,10 +49,10 @@ Hardens the request layer and cleans up the connect UX.
 
 ## [1.1.0] - 2026-05-25
 
-The module is now fully self-contained — no required modules.
+The module is now fully self-contained, with no required modules.
 
 ### Added
-- **`Invoke-MgGraphCommunityRequest`** — a pure-PowerShell drop-in for `Invoke-MgGraphRequest`. Supports relative URIs (`/me`), full URLs, `-Beta`, `-FollowPagination` (walks `@odata.nextLink`), custom `-Body` (auto-JSON), custom `-Headers`, and `-OutputType PSObject|Hashtable|HttpResponse`.
+- **`Invoke-MgGraphCommunityRequest`**: a pure-PowerShell drop-in for `Invoke-MgGraphRequest`. Supports relative URIs (`/me`), full URLs, `-Beta`, `-FollowPagination` (walks `@odata.nextLink`), custom `-Body` (auto-JSON), custom `-Headers`, and `-OutputType PSObject|Hashtable|HttpResponse`.
 - Auto-refresh on HTTP 401 (uses cached refresh token, retries once).
 - Throttling support: honors `Retry-After` on HTTP 429.
 - Clean error surfacing: Graph `error.code` and `error.message` are extracted into the PowerShell error.
@@ -60,7 +60,7 @@ The module is now fully self-contained — no required modules.
 
 ### Changed
 - **`Microsoft.Graph.Authentication` is no longer a required dependency.** Removed from `RequiredModules` in the manifest. `Install-Module MgGraphCommunity` installs nothing else now.
-- SDK handoff is now opportunistic: if `Microsoft.Graph.Authentication` is installed in the session we still call `Connect-MgGraph -AccessToken` so existing SDK-based scripts continue to work. If it isn't installed, we silently skip the handoff — `Invoke-MgGraphCommunityRequest` works regardless.
+- SDK handoff is now opportunistic: if `Microsoft.Graph.Authentication` is installed in the session we still call `Connect-MgGraph -AccessToken` so existing SDK-based scripts continue to work. If it isn't installed, we silently skip the handoff, and `Invoke-MgGraphCommunityRequest` works regardless.
 - README quick start updated to use `Invoke-MgGraphCommunityRequest` instead of the SDK.
 
 ## [1.0.0] - 2026-05-25
@@ -69,21 +69,21 @@ Initial community release. Drop-in alternative to `Connect-MgGraph` with full fl
 
 ### Added
 - `Connect-MgGraphCommunity` with parameter sets for every flow `Connect-MgGraph` exposes:
-  - Interactive (default) — Authorization Code + PKCE via system browser and loopback listener
+  - Interactive (default): Authorization Code + PKCE via system browser and loopback listener
   - DeviceCode (`-UseDeviceCode`)
   - ClientSecret (`-ClientSecretCredential`)
   - Certificate (`-Certificate`, `-CertificateThumbprint`, `-CertificateName`)
   - AccessToken (`-AccessToken`)
-  - Managed Identity (`-Identity`, optional `-ManagedIdentityClientId`) — IMDS, App Service, and Azure Arc
+  - Managed Identity (`-Identity`, optional `-ManagedIdentityClientId`): IMDS, App Service, and Azure Arc
 - `Disconnect-MgGraphCommunity` (optionally `-ClearCache`)
 - `Get-MgGraphCommunityContext` returning the active connection context
 - `-Environment Global|USGov|USGovDoD|China` for sovereign clouds
 - `-PersistRefreshToken` opt-in disk cache (DPAPI on Windows, `chmod 600` JSON elsewhere)
-- In-memory token cache by default — no credentials written to disk unless explicitly opted in
+- In-memory token cache by default; no credentials written to disk unless explicitly opted in
 - Silent refresh-token flow when a cached refresh token exists
 - Pester smoke tests for PKCE generation, scope resolution, authority resolution, JWT decode, and cache round-trip
 - Hands the access token to `Connect-MgGraph -AccessToken` so all `Microsoft.Graph.*` cmdlets keep working
 
 ### Notes
 - Replaces the earlier standalone script (previously under `Connect-MgGraphViaBrowser/`), which has been removed in favor of the module structure.
-- Not yet published to PowerShell Gallery — install from this repository via `Import-Module`. Gallery publish planned after live smoke-testing.
+- Not yet published to PowerShell Gallery; install from this repository via `Import-Module`. Gallery publish planned after live smoke-testing.
