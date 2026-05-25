@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="MgGraphCommunity — A drop-in for Connect-MgGraph. No WAM. No MSAL. No SDK black box." width="100%">
+</p>
+
 # MgGraphCommunity
 
 A community-maintained drop-in alternative to `Connect-MgGraph`. Pure PowerShell, no MSAL DLL hunting, no compiled C#, **no WAM**.
