@@ -18,6 +18,16 @@
 
 > Same flows. Working interactive. Safer-by-default cache. No SDK black box.
 
+## Quick start
+
+```powershell
+Install-Module MgGraphCommunity -Scope CurrentUser
+Connect-MgGraphCommunity
+Get-MgUser -Top 5   # all Microsoft.Graph cmdlets keep working
+```
+
+That's it. Browser opens, you sign in, you're connected.
+
 ## Why this exists
 
 Starting in `Microsoft.Graph` v2.34, the SDK made the **Windows Account Manager (WAM)** the default broker for interactive sign-in on Windows. WAM is on by default on current Windows builds, and as a result `Connect-MgGraph` no longer behaves the way many admins rely on:
