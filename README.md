@@ -12,7 +12,13 @@ Starting in `Microsoft.Graph` v2.34, the SDK made the **Windows Account Manager 
 - The classic interactive authorization-code flow (system browser, loopback redirect) is unreachable from the SDK's interactive path.
 - For admins managing multiple tenants from one workstation, this is a real productivity and security regression.
 
-Reference: <https://github.com/microsoftgraph/msgraph-sdk-powershell/issues/3481#issuecomment-3687499347>
+**There was no announcement from Microsoft about this change.** No blog post, no release-notes call-out, no migration guide — it landed quietly and admins discovered it by way of broken workflows.
+
+The most reliable record of what changed, why, and how the community and Microsoft engineers have been discussing it is this single GitHub issue:
+
+> **<https://github.com/microsoftgraph/msgraph-sdk-powershell/issues/3481#issuecomment-3687499347>**
+
+If you want context on the problem this module exists to solve, start there.
 
 ## What it does
 
