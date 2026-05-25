@@ -67,14 +67,39 @@ Sovereign clouds: pass `-Environment Global|USGov|USGovDoD|China`.
 
 ## Comparison
 
-| Behavior                          | Connect-MgGraph (SDK)             | MgGraphCommunity                                  |
-|-----------------------------------|-----------------------------------|---------------------------------------------------|
-| Interactive sign-in on Windows    | WAM (broken for secondary accts)  | System browser + PKCE                             |
-| Dependencies                      | MSAL (`Microsoft.Identity.Client`)| **None**                                          |
-| Token persistence default         | DPAPI via MSAL, no opt-out flag   | In-memory only; disk persistence opt-in           |
-| Compiled assemblies               | Yes                               | None — pure PowerShell                            |
-| Cold start                        | Slower (MSAL load)                | Fast                                              |
-| Auditability                      | Opaque                            | Every line readable                               |
+How MgGraphCommunity stacks up against the closest alternatives. This is the honest version — picking your tool should be a decision, not a sales pitch.
+
+| | **Microsoft.Graph SDK** | **MSGraphRequest** | **MgGraphCommunity** |
+|---|---|---|---|
+| **What it is** | Official Microsoft SDK with typed cmdlets per endpoint | Community general-purpose Graph client | Auth + thin `Invoke` wrapper, drop-in for `Connect-MgGraph` |
+| **WAM-free interactive sign-in (Windows)** | ❌ broken in v2.34+ | ✅ | ✅ |
+| **Pure PowerShell** | ❌ depends on MSAL DLL | ✅ | ✅ |
+| **Required modules** | none (per module) | none | **none** |
+| **Auth flows** | All | All | All (Interactive, DeviceCode, ClientSecret, Certificate ×3, AccessToken, ManagedIdentity) |
+| **Loopback listener safety** | n/a (MSAL) | **blocks forever** on `GetContext()` | async with 5-min timeout |
+| **CSRF `state` validation** | inside MSAL | ✅ | ✅ |
+| **Token cache default** | DPAPI via MSAL, no opt-out | in-memory only | **in-memory by default, opt-in DPAPI** |
+| **Sovereign clouds at request layer** | ✅ | ❌ hardcoded `graph.microsoft.com` | ✅ Global / USGov / USGovDoD / China |
+| **URI input** | full URL or relative | `-Resource` + `-APIVersion` (no full URL accepted) | full URL, relative path, or `-Beta` shortcut |
+| **Pagination** | manual | **always on** | opt-in `-FollowPagination` |
+| **Proactive token refresh** | ✅ (MSAL) | ✅ (10 min) | ✅ (5 min) |
+| **Auto-retry on 401** | ✅ (MSAL) | n/a (proactive) | ✅ |
+| **Throttling (429) retry** | ✅ | ✅ | ✅ |
+| **Gateway timeout (504) retry** | ❌ | ✅ (60 s) | ✅ (60 s) |
+| **Sticky session headers** | ❌ | ✅ `Add-AuthenticationHeaderItem` | ✅ `Add-MgGraphCommunityDefaultHeader` |
+| **Graph error surfacing** | ✅ | ✅ | ✅ |
+| **Typed cmdlets per endpoint** (`Get-MgUser`, etc.) | ✅ | ❌ | ❌ |
+| **Compiled assemblies** | yes (MSAL) | none | none |
+| **Cold start** | slow (MSAL load) | fast | fast |
+| **Maturity** | official, years of development | community, ~5 years in production | community, brand new |
+
+### When to pick which
+
+- **Microsoft.Graph SDK** — pick when you want typed cmdlets per endpoint (`Get-MgUser`, `New-MgGroup`, ...), your interactive sign-in isn't broken (Linux/macOS, or you don't mind WAM), and you accept the always-on persistent token cache.
+- **MSGraphRequest** — pick when you're already using it. The team has 5+ years of production trust; for most workloads it's solid. Just be aware that interactive listener blocks forever and sovereign clouds aren't supported in the request layer.
+- **MgGraphCommunity** — pick when you want the smallest possible install (`Install-Module MgGraphCommunity` and nothing else), WAM-free interactive on Windows, dynamic scopes per call, sovereign-cloud support at every layer, and the safer-by-default in-memory cache posture. URIs match what you copy from the Graph Explorer browser network tab — no `-Resource` splitting required.
+
+If you also need a permission-scanning tool with its own GUI, look at [M365Permissions](https://github.com/jflieben/M365Permissions) — different scope, but the same project philosophy.
 
 ## Requirements
 
