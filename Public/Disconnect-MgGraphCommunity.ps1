@@ -14,6 +14,7 @@ function Disconnect-MgGraphCommunity {
     Clear-MgcTokenCache -IncludeDisk:$ClearCache
     $script:MgcContext        = $null
     $script:MgcActiveSession  = $null
+    $script:MgcSessions       = [ordered]@{}
     $script:MgcDefaultHeaders = @{}
 
     try {

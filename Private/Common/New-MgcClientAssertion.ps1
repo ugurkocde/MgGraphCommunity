@@ -55,7 +55,12 @@ function New-MgcClientAssertion {
         x5t = $x5t
     }
 
-    $now = [int][double]::Parse((Get-Date -Date '1970-01-01T00:00:00Z' | New-TimeSpan -End ([DateTime]::UtcNow)).TotalSeconds)
+    # Culture- and timezone-safe Unix timestamp. Piping '1970-01-01T00:00:00Z'
+    # through Get-Date converts the epoch to LOCAL time, which skews nbf/exp by
+    # the machine's UTC offset and makes Entra ID reject the assertion outside
+    # near-UTC timezones. Subtract a true UTC epoch instead.
+    $epoch = New-Object DateTime 1970, 1, 1, 0, 0, 0, ([DateTimeKind]::Utc)
+    $now   = [int64]([DateTime]::UtcNow - $epoch).TotalSeconds
     $body = [ordered]@{
         aud = $TokenEndpoint
         iss = $ClientId

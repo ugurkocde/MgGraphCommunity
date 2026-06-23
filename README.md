@@ -34,23 +34,23 @@ That's it. One install. Browser opens, you sign in, you call Graph. **No `Micros
 
 ## Why this exists
 
-Starting in `Microsoft.Graph` v2.34, the SDK made the **Windows Account Manager (WAM)** the default broker for interactive sign-in on Windows. WAM is on by default on current Windows builds, and as a result `Connect-MgGraph` no longer behaves the way many admins rely on:
+In `Microsoft.Graph` v2.34.0 (December 2025), the SDK switched interactive sign-in on Windows to the **Windows Account Manager (WAM)** broker. It became the default with no way to turn it off, and the existing opt-out options were deprecated. The change shipped with a single line in the GitHub release notes: no advance notice, no blog post, no migration guide. Admins discovered it the hard way, through broken workflows:
 
 - Secondary / service accounts not registered on the local device fail or require full credentials (email + password + MFA) on every call.
 - The classic interactive authorization-code flow (system browser, loopback redirect) is unreachable from the SDK's interactive path.
 - For admins managing multiple tenants from one workstation, this is a real productivity and security regression.
 
-**There was no announcement from Microsoft about this change.** No blog post, no release-notes call-out, no migration guide. It landed quietly and admins discovered it by way of broken workflows.
+Microsoft has since added an escape hatch, `Set-MgGraphOption -DisableLoginByWAM $true` (v2.35.1+), but it only takes effect when you bring **your own app registration**. With the SDK's built-in client ID, the one almost everyone uses, WAM remains mandatory.
 
-The most reliable record of what changed, why, and how the community and Microsoft engineers have been discussing it is this single GitHub issue:
+The community discussion that documents what changed, why, and where Microsoft landed is this GitHub issue:
 
-> **<https://github.com/microsoftgraph/msgraph-sdk-powershell/issues/3481#issuecomment-3687499347>**
+> **<https://github.com/microsoftgraph/msgraph-sdk-powershell/issues/3481>**
 
 If you want context on the problem this module exists to solve, start there.
 
 ## What it does
 
-`MgGraphCommunity` ships a single cmdlet, `Connect-MgGraphCommunity`, that supports every flow `Connect-MgGraph` supports, implemented as pure PowerShell against the Microsoft identity platform v2 endpoints. After acquiring a token it hands it to `Connect-MgGraph -AccessToken`, so all existing `Microsoft.Graph.*` cmdlets keep working unchanged.
+`MgGraphCommunity` centers on one command, `Connect-MgGraphCommunity`, which implements the `Connect-MgGraph` sign-in flows as pure PowerShell against the Microsoft identity platform v2 endpoints (every flow except the niche `-EnvironmentVariable` set). After acquiring a token it hands it to `Connect-MgGraph -AccessToken` if `Microsoft.Graph.Authentication` is present, so all existing `Microsoft.Graph.*` cmdlets keep working unchanged. Its own `Invoke-MgGraphCommunityRequest` calls Graph directly (including binary upload/download), `Invoke-MgGraphCommunityBatch` combines requests into `$batch` calls, and `Select-MgGraphCommunityContext` switches between multiple live tenant connections, so no SDK module is ever required.
 
 | Flow                 | How to invoke                                               |
 |----------------------|-------------------------------------------------------------|
@@ -72,32 +72,34 @@ How MgGraphCommunity stacks up against the closest alternatives. This is the hon
 | | **Microsoft.Graph SDK** | **MSGraphRequest** | **MgGraphCommunity** |
 |---|---|---|---|
 | **What it is** | Official Microsoft SDK with typed cmdlets per endpoint | Community general-purpose Graph client | Auth + thin `Invoke` wrapper, drop-in for `Connect-MgGraph` |
-| **WAM-free interactive sign-in (Windows)** | ❌ broken in v2.34+ | ✅ | ✅ |
-| **Pure PowerShell** | ❌ depends on MSAL DLL | ✅ | ✅ |
-| **Required modules** | none (per module) | none | **none** |
-| **Auth flows** | All | All | All (Interactive, DeviceCode, ClientSecret, Certificate ×3, AccessToken, ManagedIdentity) |
+| **WAM-free interactive sign-in (Windows)** | No with the built-in app ID; opt-out (v2.35.1+) requires your own app registration | Yes | Yes |
+| **Pure PowerShell** | No, depends on MSAL DLL | Yes | Yes |
+| **Required modules** | `Microsoft.Graph.Authentication` (pinned by every workload module) | none | **none** |
+| **Auth flows** | All | All | All except `-EnvironmentVariable` (Interactive, DeviceCode, ClientSecret, Certificate x3, AccessToken, ManagedIdentity) |
 | **Loopback listener safety** | n/a (MSAL) | **blocks forever** on `GetContext()` | async with 5-min timeout |
-| **CSRF `state` validation** | inside MSAL | ✅ | ✅ |
-| **Token cache default** | DPAPI via MSAL, no opt-out | in-memory only | **in-memory by default, opt-in DPAPI** |
-| **Sovereign clouds at request layer** | ✅ | ❌ hardcoded `graph.microsoft.com` | ✅ Global / USGov / USGovDoD / China |
-| **URI input** | full URL or relative | `-Resource` + `-APIVersion` (no full URL accepted) | full URL, relative path, or `-Beta` shortcut |
+| **CSRF `state` validation** | inside MSAL | Yes | Yes |
+| **Token cache default** | persistent (MSAL); in-memory only via `-ContextScope Process` | in-memory only | **in-memory by default, opt-in persistence** |
+| **Sovereign clouds at request layer** | Yes | No, hardcoded `graph.microsoft.com` | Yes: Global / USGov / USGovDoD / China |
+| **URI input** | full URL or relative | `-Resource` + `-APIVersion` (no full URL accepted) | full URL or relative path (relative defaults to `/beta`; `-V1` for stable) |
 | **Pagination** | manual | **always on** | opt-in `-FollowPagination` |
-| **Proactive token refresh** | ✅ (MSAL) | ✅ (10 min) | ✅ (5 min) |
-| **Auto-retry on 401** | ✅ (MSAL) | n/a (proactive) | ✅ |
-| **Throttling (429) retry** | ✅ | ✅ | ✅ |
-| **Gateway timeout (504) retry** | ❌ | ✅ (60 s) | ✅ (60 s) |
-| **Sticky session headers** | ❌ | ✅ `Add-AuthenticationHeaderItem` | ✅ `Add-MgGraphCommunityDefaultHeader` |
-| **Graph error surfacing** | ✅ | ✅ | ✅ |
-| **Typed cmdlets per endpoint** (`Get-MgUser`, etc.) | ✅ | ❌ | ❌ |
+| **JSON `$batch` helper** | No (manual) | No | Yes: `Invoke-MgGraphCommunityBatch` (auto-chunk 20, retries throttled sub-requests) |
+| **Multi-tenant session switching** | `Get-MgContext` per process | No | Yes: `Select-MgGraphCommunityContext` (no re-auth) |
+| **Binary upload/download** | Yes | n/a | Yes: `-InputFilePath` / `-OutputFilePath` |
+| **Proactive token refresh** | Yes (MSAL) | Yes (10 min) | Yes (5 min) |
+| **Auto-retry on 401** | Yes (MSAL) | n/a (proactive) | Yes (delegated flows) |
+| **Transient retry (429 / 503 / 504)** | Yes | 429 + 504 | Yes, bounded `-MaxRetry` w/ backoff + Retry-After |
+| **Sticky session headers** | No | Yes: `Add-AuthenticationHeaderItem` | Yes: `Add-MgGraphCommunityDefaultHeader` |
+| **Graph error surfacing** | Yes | Yes | Yes |
+| **Typed cmdlets per endpoint** (`Get-MgUser`, etc.) | Yes | No | No |
 | **Compiled assemblies** | yes (MSAL) | none | none |
 | **Cold start** | slow (MSAL load) | fast | fast |
-| **Maturity** | official, years of development | community, ~5 years in production | community, brand new |
+| **Maturity** | official, years of development | community, ~5 years on the Gallery | community, brand new |
 
 ### When to pick which
 
-- **Microsoft.Graph SDK**: pick when you want typed cmdlets per endpoint (`Get-MgUser`, `New-MgGroup`, ...), your interactive sign-in isn't broken (Linux/macOS, or you don't mind WAM), and you accept the always-on persistent token cache.
-- **MSGraphRequest**: pick when you're already using it. The team has 5+ years of production trust; for most workloads it's solid. Just be aware that interactive listener blocks forever and sovereign clouds aren't supported in the request layer.
-- **MgGraphCommunity**: pick when you want the smallest possible install (`Install-Module MgGraphCommunity` and nothing else), WAM-free interactive on Windows, dynamic scopes per call, sovereign-cloud support at every layer, and the safer-by-default in-memory cache posture. URIs match what you copy from the Graph Explorer browser network tab, with no `-Resource` splitting required.
+- **Microsoft.Graph SDK**: pick when you want typed cmdlets per endpoint (`Get-MgUser`, `New-MgGroup`, ...), your interactive sign-in isn't broken (Linux/macOS, your own app registration, or you don't mind WAM), and you remember to opt out of the persistent token cache when you need to (`-ContextScope Process`).
+- **MSGraphRequest**: pick when you're already using it. The MSEndpointMgr team has five years on the Gallery; for most workloads it's solid. Just be aware that the interactive listener blocks forever if the browser never comes back, and sovereign clouds aren't supported in the request layer.
+- **MgGraphCommunity**: pick when you want the smallest possible install (`Install-Module MgGraphCommunity` and nothing else), WAM-free interactive on Windows with the default client ID, dynamic scopes per call, sovereign-cloud support at every layer, and the safer-by-default in-memory cache posture. URIs match what you copy from the Graph Explorer browser network tab, with no `-Resource` splitting required.
 
 If you also need a permission-scanning tool with its own GUI, look at [M365Permissions](https://github.com/jflieben/M365Permissions): different scope, but the same project philosophy.
 
@@ -125,8 +127,8 @@ Connect-MgGraphCommunity -Scopes 'NewScope.Read.All' -ForceConsent
 Connect-MgGraphCommunity -PersistRefreshToken
 
 # Call Graph endpoints directly (no SDK needed)
-Invoke-MgGraphCommunityRequest -Method GET -Uri '/me'                    # relative URI (defaults to /v1.0)
-Invoke-MgGraphCommunityRequest -Method GET -Uri '/me' -Beta              # /beta endpoint
+Invoke-MgGraphCommunityRequest -Method GET -Uri '/me'                    # relative URI (defaults to /beta)
+Invoke-MgGraphCommunityRequest -Method GET -Uri '/me' -V1                # stable /v1.0 endpoint
 Invoke-MgGraphCommunityRequest -Method GET -Uri 'https://graph.microsoft.com/beta/deviceManagement/managedDevices'
 Invoke-MgGraphCommunityRequest -Method GET -Uri '/users' -FollowPagination   # walks @odata.nextLink, returns all pages
 
@@ -148,11 +150,35 @@ Invoke-MgGraphCommunityRequest -Method GET -Uri "https://graph.microsoft.com/bet
 
 # Sticky headers for the session (useful for ConsistencyLevel, Prefer, etc.)
 Add-MgGraphCommunityDefaultHeader -Name 'ConsistencyLevel' -Value 'eventual'
-Invoke-MgGraphCommunityRequest -Uri "/users?\$count=true&\$filter=startswith(displayName,'A')"
+Invoke-MgGraphCommunityRequest -Uri "/users?`$count=true&`$filter=startswith(displayName,'A')"
 # Or via aliases
 Add-MgcHeader 'Prefer' 'odata.maxpagesize=100'
 Get-MgcHeader        # list everything currently sticky
 Remove-MgcHeader 'Prefer'
+
+# Batch up to 20 requests into a single round-trip (auto-chunks beyond 20)
+$responses = Invoke-MgGraphCommunityBatch -Requests @(
+    @{ Method = 'GET'; Url = '/me' },
+    @{ Method = 'GET'; Url = '/me/memberOf' },
+    @{ Method = 'GET'; Url = "/users?`$top=5" }
+)
+$responses[0].status        # per-request HTTP status
+$responses[0].body          # per-request parsed body
+# Alias: Invoke-MgcBatch. Throttled (429) sub-requests are retried automatically.
+
+# Download binary content straight to disk (profile photo, report $value, ...)
+Invoke-MgGraphCommunityRequest -Uri "/me/photo/`$value" -OutputFilePath ./me.jpg
+
+# Upload a file's raw bytes
+Invoke-MgGraphCommunityRequest -Method PUT -Uri "/me/photo/`$value" `
+    -InputFilePath ./me.jpg -ContentType 'image/jpeg'
+
+# Connect to several tenants and switch the active one without re-authenticating
+Connect-MgGraphCommunity -TenantId 'contoso.onmicrosoft.com'
+Connect-MgGraphCommunity -TenantId 'fabrikam.onmicrosoft.com'
+Get-MgGraphCommunityContext -ListAvailable            # list all live connections
+Select-MgGraphCommunityContext -TenantId 'contoso.onmicrosoft.com'   # flip active
+# Alias: Select-MgcContext (also -Index / -ClientId / -CacheKey)
 
 # If you also have Microsoft.Graph.Authentication installed, the official cmdlets also work
 Get-MgUser -Top 5
@@ -169,12 +195,12 @@ Disconnect-MgGraphCommunity -ClearCache
 
 By default, the only place a refresh token lives is **in memory**, scoped to the PowerShell session. Close the shell and it's gone.
 
-- `-PersistRefreshToken` opts in to disk persistence: DPAPI-encrypted on Windows (`%LOCALAPPDATA%\MgGraphCommunity\tokens.json`), restricted-permission JSON on macOS/Linux (`~/.local/share/MgGraphCommunity/tokens.json`).
+- `-PersistRefreshToken` opts in to disk persistence. On Windows the file is DPAPI-encrypted (`%LOCALAPPDATA%\MgGraphCommunity\tokens.json`). On macOS (`~/Library/Application Support/MgGraphCommunity/tokens.json`) and Linux (`~/.local/share/MgGraphCommunity/tokens.json`) it is a JSON file restricted to your user (`chmod 600`, applied before the token is written). Only the refresh token plus minimal metadata is persisted; access tokens never touch disk.
 - The cache key includes ClientId, TenantId, Authority, and ParameterSet, so multiple identities and flows coexist.
 - `-NoCache` skips both layers for one call.
 - `Disconnect-MgGraphCommunity -ClearCache` wipes the persisted file.
 
-This is intentionally more conservative than Microsoft's SDK, which persists tokens via MSAL by default with no opt-out flag.
+The Microsoft SDK persists its MSAL token cache by default and you have to remember `-ContextScope Process` to avoid it. MgGraphCommunity flips that default: nothing touches disk unless you explicitly opt in.
 
 ## Bring your own app registration
 
@@ -190,7 +216,7 @@ Connect-MgGraphCommunity `
 App reg setup:
 
 1. Register a new application in Entra ID.
-2. **Authentication → Add a platform → Mobile and desktop applications**: add `http://localhost` (or a specific `http://localhost:PORT`, in which case pass `-RedirectPort PORT`).
+2. **Authentication -> Add a platform -> Mobile and desktop applications**: add `http://localhost` (or a specific `http://localhost:PORT`, in which case pass `-RedirectPort PORT`).
 3. **API permissions**: add the delegated Graph scopes you need and grant admin consent if required.
 
 ## License
@@ -199,4 +225,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Credits
 
-Inspired by the OAuth Auth Code + PKCE loopback patterns in [MSGraphRequest](https://www.powershellgallery.com/packages/MSGraphRequest), [M365Permissions](https://github.com/jflieben/M365Permissions), and Mark Orr's [Entra-PIM](https://github.com/markorr321/Entra-PIM).
+Inspired by the OAuth Auth Code + PKCE loopback patterns in MSEndpointMgr's [MSGraphRequest](https://www.powershellgallery.com/packages/MSGraphRequest), Jos Lieben's [M365Permissions](https://github.com/jflieben/M365Permissions), and Mark Orr's [Entra-PIM](https://github.com/markorr321/Entra-PIM).

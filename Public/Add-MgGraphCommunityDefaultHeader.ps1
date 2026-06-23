@@ -32,6 +32,10 @@ function Add-MgGraphCommunityDefaultHeader {
         [Parameter(Mandatory, Position = 1)][string]$Value
     )
 
+    if ($Name -eq 'Authorization') {
+        throw "The Authorization header is managed by the module and cannot be set as a default header. Use Connect-MgGraphCommunity (e.g. -AccessToken) to control the bearer token."
+    }
+
     if (-not $script:MgcDefaultHeaders) {
         $script:MgcDefaultHeaders = @{}
     }

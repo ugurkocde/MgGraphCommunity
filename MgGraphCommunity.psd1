@@ -1,6 +1,6 @@
 @{
     RootModule           = 'MgGraphCommunity.psm1'
-    ModuleVersion        = '1.3.0'
+    ModuleVersion        = '1.4.0'
     GUID                 = 'a7c1f4b8-5d20-4e6e-9a3b-2e8f0d1c7b42'
     Author               = 'MgGraphCommunity contributors'
     CompanyName          = 'Community'
@@ -17,14 +17,16 @@
         'Connect-MgGraphCommunity',
         'Disconnect-MgGraphCommunity',
         'Get-MgGraphCommunityContext',
+        'Select-MgGraphCommunityContext',
         'Invoke-MgGraphCommunityRequest',
+        'Invoke-MgGraphCommunityBatch',
         'Add-MgGraphCommunityDefaultHeader',
         'Remove-MgGraphCommunityDefaultHeader',
         'Get-MgGraphCommunityDefaultHeader'
     )
     CmdletsToExport      = @()
     VariablesToExport    = @()
-    AliasesToExport      = @('Invoke-MgcRequest','Add-MgcHeader','Remove-MgcHeader','Get-MgcHeader')
+    AliasesToExport      = @('Invoke-MgcRequest','Invoke-MgcBatch','Select-MgcContext','Add-MgcHeader','Remove-MgcHeader','Get-MgcHeader')
 
     PrivateData = @{
         PSData = @{
@@ -32,6 +34,49 @@
             LicenseUri   = 'https://github.com/ugurkocde/MgGraphCommunity/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/ugurkocde/MgGraphCommunity'
             ReleaseNotes = @'
+1.4.0
+- New: Invoke-MgGraphCommunityBatch (alias Invoke-MgcBatch) - combine up to 20 Graph
+  requests per $batch call, auto-chunking larger sets and auto-retrying throttled
+  sub-responses. Returns one { id, status, headers, body } per request, in order.
+- New: multi-connection switching. Connect now registers every connection; switch the
+  active one with Select-MgGraphCommunityContext (alias Select-MgcContext) by
+  -TenantId / -ClientId / -Index / -CacheKey, and enumerate them with
+  Get-MgGraphCommunityContext -ListAvailable. No re-authentication required.
+- New: binary I/O on Invoke-MgGraphCommunityRequest - -InputFilePath (upload file bytes),
+  -OutputFilePath (stream the raw response to disk, binary-safe across PS 5.1/7.x), and
+  -ContentType (send non-JSON bodies as-is). Useful for photo/$value and upload sessions.
+- New: -MaxRetry on Invoke-MgGraphCommunityRequest. Transient errors (429 / 503 / 504)
+  are now retried up to MaxRetry times (default 3) with backoff; Retry-After is honored.
+  Previously 429 and 504 were retried once each and 503 was not retried.
+- New: every request sends a client-request-id; Graph request-id / client-request-id are
+  surfaced in thrown errors for support correlation.
+- Change: relative URIs now default to the /beta endpoint (more Graph surface) instead of
+  /v1.0. Use -V1 on Invoke-MgGraphCommunityRequest / Invoke-MgGraphCommunityBatch for the
+  stable /v1.0 endpoint. -Beta is retained for compatibility and now matches the default.
+- Change: the AccessToken (BYO) flow derives its lifetime from the token's JWT exp claim
+  instead of assuming 3600 seconds (opaque tokens still fall back to 3600).
+- Build: PSScriptAnalyzer now runs in CI (settings in PSScriptAnalyzerSettings.psd1).
+
+1.3.1
+- Fix: certificate auth (-Certificate / -CertificateThumbprint / -CertificateName) built
+  client assertions with nbf/exp skewed by the machine's UTC offset, so Entra ID rejected
+  them in most non-UTC timezones. Timestamps are now timezone- and culture-safe.
+- Interactive flow: loopback listener retries when an OS-assigned port is grabbed in the
+  bind race; stray local requests (favicon.ico, preconnects) get a 404 instead of aborting
+  the sign-in; CSRF state now comes from a cryptographic RNG; the browser result page
+  reflects the state check.
+- Token cache: only the refresh token (plus minimal metadata) is persisted - access tokens
+  no longer touch disk. On macOS/Linux, permissions (700 dir / 600 file) are applied BEFORE
+  the payload is written and failures warn instead of staying silent. Explicit UTF-8 I/O.
+- Request layer: the Authorization header can no longer be overwritten by default or
+  per-call headers; Add-MgGraphCommunityDefaultHeader rejects 'Authorization'.
+  -FollowPagination keys on the presence of .value, so empty first pages page correctly and
+  single-page collections return the same merged-array shape as multi-page results.
+- Managed identity (Azure Arc): the challenge-file path from WWW-Authenticate is validated
+  (Arc tokens directory, .key extension, size cap) before being read.
+- Module load fails fast with a clear message on .NET Framework < 4.6 (PS 5.1 on Windows 7 /
+  Server 2008 R2), which the module's crypto/time APIs require.
+
 1.3.0
 - Cross-version support: module now runs on Windows PowerShell 5.1 in addition to PowerShell 7+.
   CompatiblePSEditions = Desktop, Core. PowerShellVersion = 5.1.

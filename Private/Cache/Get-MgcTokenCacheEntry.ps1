@@ -25,7 +25,7 @@ function Get-MgcTokenCacheEntry {
     if (-not (Test-Path $cacheFile)) { return $null }
 
     try {
-        $cache = Get-Content $cacheFile -Raw | ConvertFrom-Json
+        $cache = Get-Content $cacheFile -Raw -Encoding UTF8 | ConvertFrom-Json
         $entry = $cache.$Key
         if (-not $entry) { return $null }
 

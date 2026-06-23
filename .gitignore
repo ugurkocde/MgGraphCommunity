@@ -21,6 +21,9 @@ desktop.ini
 /publish/
 *.nupkg
 
+# Local planning / working notes
+/tasks/
+
 # Secrets (defensive — never commit these)
 *.pfx
 *.key

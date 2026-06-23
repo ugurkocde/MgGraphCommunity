@@ -284,10 +284,18 @@ function Connect-MgGraphCommunity {
 
         'AccessToken' {
             $plain = (New-Object System.Net.NetworkCredential('', $AccessToken)).Password
+            # Derive the real lifetime from the JWT 'exp' claim when the token is a
+            # decodable JWT; fall back to 3600s for opaque tokens.
+            $expiresIn = 3600
+            $expiry    = Get-MgcTokenExpiry -Tokens ([pscustomobject]@{ access_token = $plain })
+            if ($expiry) {
+                $seconds = [int]([Math]::Max(0, ($expiry - (Get-Date).ToUniversalTime()).TotalSeconds))
+                if ($seconds -gt 0) { $expiresIn = $seconds }
+            }
             $tokens = [pscustomobject]@{
                 access_token  = $plain
                 refresh_token = $null
-                expires_in    = 3600
+                expires_in    = $expiresIn
                 token_type    = 'Bearer'
             }
         }
@@ -317,6 +325,11 @@ function Connect-MgGraphCommunity {
         FlowType      = $flowType
         Persist       = [bool]$PersistRefreshToken
     }
+
+    # Register the session so callers can switch between live connections
+    # (Select-MgGraphCommunityContext / Get-MgGraphCommunityContext -ListAvailable).
+    if ($null -eq $script:MgcSessions) { $script:MgcSessions = [ordered]@{} }
+    $script:MgcSessions[$cacheKey] = $script:MgcActiveSession
 
     # Opportunistic SDK handoff - silent no-op if Microsoft.Graph.Authentication isn't installed
     $sdkHandoff = Send-MgcTokenToSdk -AccessToken $tokens.access_token

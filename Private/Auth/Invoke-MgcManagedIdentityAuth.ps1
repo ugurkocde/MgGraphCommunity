@@ -52,7 +52,25 @@ function Invoke-MgcManagedIdentityAuth {
             $authHeader = $first.Headers['WWW-Authenticate']
             if ($authHeader -match 'Basic realm=(.+)') {
                 $challengePath = $Matches[1].Trim()
-                $secret = Get-Content -Path $challengePath -Raw
+                # Only read the Arc agent's expected challenge location: a small
+                # .key file inside the agent's Tokens directory. Anything else in
+                # the header must not coerce us into disclosing arbitrary files.
+                $expectedDir = if (Test-MgcIsWindows) {
+                    Join-Path $env:ProgramData 'AzureConnectedMachineAgent\Tokens'
+                } else {
+                    '/var/opt/azcmagent/tokens'
+                }
+                $resolvedPath = [System.IO.Path]::GetFullPath($challengePath)
+                $expectedPrefix = [System.IO.Path]::GetFullPath($expectedDir).TrimEnd('\','/') + [System.IO.Path]::DirectorySeparatorChar
+                if (-not $resolvedPath.StartsWith($expectedPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+                    [System.IO.Path]::GetExtension($resolvedPath) -ne '.key') {
+                    throw "Azure Arc challenge path '$challengePath' is outside the expected Arc tokens directory - refusing to read it."
+                }
+                $challengeFile = Get-Item -LiteralPath $resolvedPath
+                if ($challengeFile.Length -gt 4096) {
+                    throw "Azure Arc challenge file is unexpectedly large - refusing to read it."
+                }
+                $secret = Get-Content -LiteralPath $resolvedPath -Raw
                 $resp = Invoke-RestMethod -Uri $uri -Headers @{ Metadata = 'true'; Authorization = "Basic $secret" } -Method GET
                 return [pscustomobject]@{
                     access_token  = $resp.access_token

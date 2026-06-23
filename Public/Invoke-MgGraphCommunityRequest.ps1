@@ -9,17 +9,22 @@ function Invoke-MgGraphCommunityRequest {
         Connect-MgGraphCommunity call.
 
         Features:
-          - Auto-prepends the active environment's Graph host for relative URIs
-            ('/me' becomes 'https://graph.microsoft.com/v1.0/me').
-          - -Beta swaps /v1.0 -> /beta for relative URIs.
+          - Auto-prepends the active environment's Graph host for relative URIs.
+            Relative URIs default to the /beta endpoint ('/me' becomes
+            'https://graph.microsoft.com/beta/me'), because beta exposes more of
+            the Graph surface. Use -V1 for the stable /v1.0 endpoint.
           - Proactive refresh: if the access token expires within 5 minutes, the
             cached refresh token is used to silently re-acquire BEFORE the call.
           - Reactive refresh: on HTTP 401, attempts one silent refresh and retries.
-          - On HTTP 429, honors the Retry-After header and retries.
-          - On HTTP 504 Gateway Timeout, sleeps 60 seconds and retries once.
+          - Transient errors (HTTP 429 / 503 / 504) are retried up to -MaxRetry times
+            with backoff; Retry-After is honored when present.
           - -FollowPagination walks @odata.nextLink and returns combined values.
+          - Binary I/O: -InputFilePath uploads a file's bytes; -OutputFilePath streams
+            the raw response to disk; -ContentType controls the request body media type.
           - Default headers added via Add-MgGraphCommunityDefaultHeader are merged
             automatically. Per-call -Headers override defaults.
+          - A client-request-id is sent on every call; on errors the Graph
+            request-id / client-request-id are surfaced for support correlation.
           - Surfaces Microsoft Graph error.code / error.message as PowerShell errors.
 
         Requires Connect-MgGraphCommunity to have established a session first.
@@ -43,19 +48,54 @@ function Invoke-MgGraphCommunityRequest {
         'HttpResponse' returns the raw response object.
 
     .PARAMETER FollowPagination
-        Auto-follow @odata.nextLink and merge .value arrays across pages.
+        Auto-follow @odata.nextLink and return the merged .value items from all
+        pages as a single array (also for single-page collection responses).
 
     .PARAMETER Beta
-        Use the /beta endpoint instead of /v1.0 when expanding a relative URI.
+        Use the /beta endpoint when expanding a relative URI. Beta is already the
+        default; this switch is retained for backward compatibility and is a no-op
+        unless combined with nothing else.
+
+    .PARAMETER V1
+        Use the stable /v1.0 endpoint instead of the default /beta when expanding a
+        relative URI. Ignored for absolute URLs (which carry their own version).
+        Takes precedence over -Beta if both are supplied.
+
+    .PARAMETER ContentType
+        Media type for the request body. Defaults to 'application/json'. When set to
+        anything other than JSON, the body is sent as-is (string or byte[]) without
+        being serialized to JSON.
+
+    .PARAMETER InputFilePath
+        Path to a file whose raw bytes are sent as the request body (uploads, e.g.
+        PUT .../photo/$value or an upload-session chunk). Defaults ContentType to
+        'application/octet-stream' when no -ContentType is given.
+
+    .PARAMETER OutputFilePath
+        Write the raw response body to this file instead of parsing it (downloads,
+        e.g. GET .../photo/$value). The response bytes are streamed binary-safe.
+
+    .PARAMETER MaxRetry
+        Maximum number of retries for transient HTTP errors (429 / 503 / 504).
+        Defaults to 3. Set to 0 to disable transient-error retries.
 
     .EXAMPLE
         Invoke-MgGraphCommunityRequest -Uri '/me'
 
     .EXAMPLE
+        Invoke-MgGraphCommunityRequest -Uri "/me/photo/`$value" -OutputFilePath ./me.jpg
+
+    .EXAMPLE
+        Invoke-MgGraphCommunityRequest -Method PUT -Uri "/me/photo/`$value" -InputFilePath ./me.jpg -ContentType 'image/jpeg'
+
+    .EXAMPLE
         Invoke-MgGraphCommunityRequest -Method GET -Uri 'https://graph.microsoft.com/beta/deviceManagement/managedDevices'
 
     .EXAMPLE
-        Invoke-MgGraphCommunityRequest -Uri '/users?$top=5' -Beta
+        Invoke-MgGraphCommunityRequest -Uri '/users?$top=5'          # /beta (default)
+
+    .EXAMPLE
+        Invoke-MgGraphCommunityRequest -Uri '/users?$top=5' -V1      # stable /v1.0
 
     .EXAMPLE
         Invoke-MgGraphCommunityRequest -Uri '/users' -FollowPagination
@@ -86,7 +126,18 @@ function Invoke-MgGraphCommunityRequest {
 
         [switch]$FollowPagination,
 
-        [switch]$Beta
+        [switch]$Beta,
+
+        [switch]$V1,
+
+        [string]$ContentType,
+
+        [string]$InputFilePath,
+
+        [string]$OutputFilePath,
+
+        [ValidateRange(0, 10)]
+        [int]$MaxRetry = 3
     )
 
     if (-not $script:MgcActiveSession) {
@@ -119,18 +170,46 @@ function Invoke-MgGraphCommunityRequest {
     $resolvedUri = if ($Uri -match '^https?://') {
         $Uri
     } else {
-        $apiVer  = if ($Beta) { 'beta' } else { 'v1.0' }
+        # Default to /beta (more surface area); -V1 opts down to the stable endpoint.
+        $apiVer  = if ($V1) { 'v1.0' } else { 'beta' }
         $cleaned = $Uri.TrimStart('/')
         "{0}/{1}/{2}" -f $script:MgcActiveSession.Authority.GraphResource, $apiVer, $cleaned
     }
+
+    # ---- Resolve the request body and its media type ----
+    $effectiveContentType = if ($ContentType)         { $ContentType }
+                            elseif ($InputFilePath)    { 'application/octet-stream' }
+                            else                       { 'application/json' }
+    $isJsonBody = $effectiveContentType -match 'json'
+
+    $requestBody = $null
+    $hasBody     = $false
+    if ($InputFilePath) {
+        $resolvedInput = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($InputFilePath)
+        if (-not (Test-Path -LiteralPath $resolvedInput)) { throw "InputFilePath not found: $InputFilePath" }
+        $requestBody = [System.IO.File]::ReadAllBytes($resolvedInput)
+        $hasBody     = $true
+    } elseif ($PSBoundParameters.ContainsKey('Body') -and $null -ne $Body) {
+        # JSON bodies that aren't already a string get serialized; everything else
+        # (raw string, byte[], non-JSON content type) is sent as-is.
+        $requestBody = if ($isJsonBody -and -not ($Body -is [string])) {
+            $Body | ConvertTo-Json -Depth 20 -Compress
+        } else {
+            $Body
+        }
+        $hasBody = $true
+    }
+
+    # One client-request-id per call (reused across retries) for support correlation.
+    $clientRequestId = [guid]::NewGuid().ToString()
 
     # Build the request closure (so we can call it multiple times for retries)
     $sendRequest = {
         param([string]$accessToken)
 
         $mergedHeaders = @{
-            'Authorization' = "Bearer $accessToken"
-            'Content-Type'  = 'application/json'
+            'Content-Type'      = $effectiveContentType
+            'client-request-id' = $clientRequestId
         }
         # Session-wide default headers (set via Add-MgGraphCommunityDefaultHeader)
         if ($script:MgcDefaultHeaders) {
@@ -140,6 +219,9 @@ function Invoke-MgGraphCommunityRequest {
         if ($Headers) {
             foreach ($k in $Headers.Keys) { $mergedHeaders[$k] = $Headers[$k] }
         }
+        # Always last: neither default nor per-call headers may replace the
+        # session's bearer token (hashtable keys are case-insensitive).
+        $mergedHeaders['Authorization'] = "Bearer $accessToken"
 
         $params = @{
             Uri     = $resolvedUri
@@ -147,13 +229,16 @@ function Invoke-MgGraphCommunityRequest {
             Headers = $mergedHeaders
         }
 
-        if ($PSBoundParameters.ContainsKey('Body') -and $null -ne $Body) {
-            $params['Body'] = if ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 20 -Compress }
-        }
+        if ($hasBody) { $params['Body'] = $requestBody }
 
         # Invoke-MgcHttpRequest abstracts -SkipHttpErrorCheck differences across
         # PS 5.1 vs 7.x and returns a uniform { StatusCode; Headers; Content } object.
-        Invoke-MgcHttpRequest -Parameters $params
+        # -ReturnBytes captures binary-safe bytes for file downloads.
+        if ($OutputFilePath) {
+            Invoke-MgcHttpRequest -Parameters $params -ReturnBytes
+        } else {
+            Invoke-MgcHttpRequest -Parameters $params
+        }
     }
 
     # ---- First attempt ----
@@ -178,21 +263,20 @@ function Invoke-MgGraphCommunityRequest {
         }
     }
 
-    # ---- Retry on 429: respect Retry-After ----
-    if ($attempt.StatusCode -eq 429) {
-        $wait = 5
+    # ---- Retry transient errors (429 / 503 / 504) with backoff ----
+    # Honors Retry-After when present (429 / 503); otherwise exponential backoff
+    # capped at 60s (504 rarely carries Retry-After).
+    $retry = 0
+    while (($attempt.StatusCode -in 429, 503, 504) -and ($retry -lt $MaxRetry)) {
+        $retry++
+        $wait = $null
         if ($attempt.Headers -and $attempt.Headers['Retry-After']) {
-            try { $wait = [int]([array]$attempt.Headers['Retry-After'])[0] } catch { }
+            try { $wait = [int]([array]$attempt.Headers['Retry-After'])[0] } catch { $wait = $null }
         }
-        Write-Verbose "429 throttled by Graph - sleeping $wait seconds before retry."
+        if ($null -eq $wait) { $wait = [int][Math]::Min(60, [Math]::Pow(2, $retry) * 2) }
+        $wait = [Math]::Max(0, $wait)
+        Write-Verbose ("HTTP {0} from Graph - retry {1}/{2} after {3}s." -f $attempt.StatusCode, $retry, $MaxRetry, $wait)
         Start-Sleep -Seconds $wait
-        $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
-    }
-
-    # ---- Retry on 504: Graph gateway timeout ----
-    if ($attempt.StatusCode -eq 504) {
-        Write-Verbose "504 Gateway Timeout from Graph - sleeping 60 seconds and retrying once."
-        Start-Sleep -Seconds 60
         $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
     }
 
@@ -207,7 +291,23 @@ function Invoke-MgGraphCommunityRequest {
                 }
             }
         } catch { }
+        # Surface correlation IDs for Graph support tickets.
+        $corr = @()
+        if ($attempt.Headers) {
+            if ($attempt.Headers['request-id'])        { $corr += "request-id: $(($attempt.Headers['request-id'] -join ' '))" }
+            if ($attempt.Headers['client-request-id']) { $corr += "client-request-id: $(($attempt.Headers['client-request-id'] -join ' '))" }
+        }
+        if ($corr.Count -eq 0) { $corr += "client-request-id: $clientRequestId" }
+        $msg += " (" + ($corr -join '; ') + ")"
         throw $msg
+    }
+
+    # ---- Binary download: stream raw bytes to disk ----
+    if ($OutputFilePath) {
+        $fullOut = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputFilePath)
+        $bytes   = if ($null -ne $attempt.ContentBytes) { $attempt.ContentBytes } else { [byte[]]@() }
+        [System.IO.File]::WriteAllBytes($fullOut, $bytes)
+        return (Get-Item -LiteralPath $fullOut)
     }
 
     if ($OutputType -eq 'HttpResponse') { return $attempt }
@@ -234,15 +334,24 @@ function Invoke-MgGraphCommunityRequest {
 
     # ---- Pagination ----
     # Works whether $parsed is a Hashtable (PS 5.1 fallback) or a PSCustomObject.
-    if ($FollowPagination -and $parsed.value -and $parsed.'@odata.nextLink') {
-        $all = @($parsed.value)
-        $next = $parsed.'@odata.nextLink'
-        while ($next) {
-            $page = Invoke-MgGraphCommunityRequest -Method GET -Uri $next -OutputType $OutputType
-            if ($page.value) { $all += $page.value }
-            $next = $page.'@odata.nextLink'
+    # Keyed on the PRESENCE of .value (an empty first page is still a collection),
+    # so -FollowPagination always returns the merged items, even for one page.
+    if ($FollowPagination) {
+        $hasValue = if ($parsed -is [System.Collections.IDictionary]) {
+            $parsed.Contains('value')
+        } else {
+            $null -ne $parsed.PSObject.Properties['value']
         }
-        return $all
+        if ($hasValue) {
+            $all  = @($parsed.value)
+            $next = $parsed.'@odata.nextLink'
+            while ($next) {
+                $page = Invoke-MgGraphCommunityRequest -Method GET -Uri $next -OutputType $OutputType
+                if ($page.value) { $all += $page.value }
+                $next = $page.'@odata.nextLink'
+            }
+            return $all
+        }
     }
 
     return $parsed

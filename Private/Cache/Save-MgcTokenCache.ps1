@@ -32,7 +32,14 @@ function Save-MgcTokenCache {
         New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
     }
 
-    $payload = $Tokens | ConvertTo-Json -Compress -Depth 5
+    # Persist the refresh token + minimal metadata only. The access token is
+    # short-lived and never needed across sessions, so it stays off disk.
+    $persistable = [pscustomobject]@{
+        refresh_token = $Tokens.refresh_token
+        token_type    = $Tokens.token_type
+        scope         = $Tokens.scope
+    }
+    $payload = $persistable | ConvertTo-Json -Compress -Depth 5
 
     # Cross-version safe: Test-MgcIsWindows replaces $IsWindows (PS 6+ only).
     $onWindows = Test-MgcIsWindows
@@ -47,7 +54,7 @@ function Save-MgcTokenCache {
     $cache = @{}
     if (Test-Path $cacheFile) {
         try {
-            $existing = Get-Content $cacheFile -Raw | ConvertFrom-Json
+            $existing = Get-Content $cacheFile -Raw -Encoding UTF8 | ConvertFrom-Json
             foreach ($prop in $existing.PSObject.Properties) { $cache[$prop.Name] = $prop.Value }
         } catch {
             Write-Verbose "Existing cache unreadable, starting fresh: $_"
@@ -55,9 +62,26 @@ function Save-MgcTokenCache {
     }
     $cache[$Key] = $entry
 
-    $cache | ConvertTo-Json -Depth 6 | Set-Content -Path $cacheFile -NoNewline
-
+    # On non-Windows the file holds the refresh token in plaintext, so restrict
+    # permissions BEFORE the payload is written (a write-then-chmod leaves a
+    # window where the default umask applies). Warn loudly if that fails.
     if (-not $onWindows) {
-        try { & chmod 600 $cacheFile } catch { Write-Verbose "chmod 600 failed: $_" }
+        $permsOk = $true
+        try {
+            & chmod 700 $cacheDir
+            if ($LASTEXITCODE -ne 0) { $permsOk = $false }
+            if (-not (Test-Path $cacheFile)) {
+                New-Item -ItemType File -Path $cacheFile -Force | Out-Null
+            }
+            & chmod 600 $cacheFile
+            if ($LASTEXITCODE -ne 0) { $permsOk = $false }
+        } catch {
+            $permsOk = $false
+        }
+        if (-not $permsOk) {
+            Write-Warning "Could not restrict permissions on '$cacheFile'. The persisted refresh token may be readable by other local users."
+        }
     }
+
+    $cache | ConvertTo-Json -Depth 6 | Set-Content -Path $cacheFile -NoNewline -Encoding UTF8
 }
