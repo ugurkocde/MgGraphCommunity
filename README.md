@@ -40,7 +40,15 @@ In `Microsoft.Graph` v2.34.0 (December 2025), the SDK switched interactive sign-
 - The classic interactive authorization-code flow (system browser, loopback redirect) is unreachable from the SDK's interactive path.
 - For admins managing multiple tenants from one workstation, this is a real productivity and security regression.
 
-Microsoft has since added an escape hatch, `Set-MgGraphOption -DisableLoginByWAM $true` (v2.35.1+), but it only takes effect when you bring **your own app registration**. With the SDK's built-in client ID, the one almost everyone uses, WAM remains mandatory.
+### What Microsoft has changed since (verified against SDK v2.38.1, July 2026)
+
+- **v2.35.0 (February 2026)** added an escape hatch after community backlash: `Set-MgGraphOption -DisableLoginByWAM $true`. It shipped broken, interactive sign-in simply hung until timeout ([#3518](https://github.com/microsoftgraph/msgraph-sdk-powershell/issues/3518)). **v2.35.1** fixed the hang.
+- The opt-out **only takes effect with your own app registration**. The official docs now say it verbatim: WAM "is enabled by default on Windows and cannot be disabled ... Except if you use your own app", and "When using the default ClientId, WAM remains enabled regardless of this setting." With the SDK's built-in client ID, the one almost everyone uses, WAM is still mandatory.
+- The maintainers describe even that opt-out as temporary: it stays for bring-your-own-app scenarios only "until WAM properly supports run as other user scenarios". The direction of travel is more WAM enforcement, not less. They have also stated that versions before 2.36.1 "will break in the future", so pinning an old SDK version is not a durable workaround.
+- Multi-tenant admins remain stuck. Signing in to a customer tenant via GDAP fails through the WAM broker on Windows ([#3613](https://github.com/microsoftgraph/msgraph-sdk-powershell/issues/3613)); the issue was closed with the guidance to use device code or register your own app, because "We are forcing WAM for security purposes."
+- The MSAL/WAM dependency now causes problems beyond sign-in: `Microsoft.Graph` 2.36.0+ and `ExchangeOnlineManagement` cannot be loaded in the same session due to MSAL conflicts ([#3576](https://github.com/microsoftgraph/msgraph-sdk-powershell/issues/3576), still open). A pure PowerShell module has no MSAL assemblies to conflict.
+
+So the gap this module fills is unchanged: interactive, WAM-free, browser-based sign-in on Windows **without registering an app in every tenant you touch**, plus direct Graph access with no compiled dependencies.
 
 The community discussion that documents what changed, why, and where Microsoft landed is this GitHub issue:
 
@@ -92,6 +100,7 @@ How MgGraphCommunity stacks up against the closest alternatives. This is the hon
 | **Graph error surfacing** | Yes | Yes | Yes |
 | **Typed cmdlets per endpoint** (`Get-MgUser`, etc.) | Yes | No | No |
 | **Compiled assemblies** | yes (MSAL) | none | none |
+| **Coexists with `ExchangeOnlineManagement` in one session** | No on 2.36.0+ (MSAL conflict, [#3576](https://github.com/microsoftgraph/msgraph-sdk-powershell/issues/3576)) | Yes | Yes |
 | **Cold start** | slow (MSAL load) | fast | fast |
 | **Maturity** | official, years of development | community, ~5 years on the Gallery | community, brand new |
 
