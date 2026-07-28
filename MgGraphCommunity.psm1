@@ -50,4 +50,4 @@ if (Test-Path $publicPath) {
 
 Export-ModuleMember `
     -Function ($publicFiles | ForEach-Object { $_.BaseName }) `
-    -Alias    @('Invoke-MgcRequest','Add-MgcHeader','Remove-MgcHeader','Get-MgcHeader','Invoke-MgcBatch','Select-MgcContext')
+    -Alias    @('Invoke-MgcRequest','Add-MgcHeader','Remove-MgcHeader','Get-MgcHeader','Invoke-MgcBatch','Select-MgcContext','New-MgcApp','Set-MgcDefaultClientId')

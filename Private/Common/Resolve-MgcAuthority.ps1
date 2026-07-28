@@ -5,17 +5,25 @@ function Resolve-MgcAuthority {
 
     .DESCRIPTION
         Mirrors the -Environment parameter on Connect-MgGraph. Supported values:
-            Global    -> login.microsoftonline.com    + graph.microsoft.com
-            USGov     -> login.microsoftonline.us     + graph.microsoft.us
-            USGovDoD  -> login.microsoftonline.us     + dod-graph.microsoft.us
-            China     -> login.chinacloudapi.cn       + microsoftgraph.chinacloudapi.cn
+            Global     -> login.microsoftonline.com    + graph.microsoft.com
+            USGov      -> login.microsoftonline.us     + graph.microsoft.us
+            USGovDoD   -> login.microsoftonline.us     + dod-graph.microsoft.us
+            China      -> login.chinacloudapi.cn       + microsoftgraph.chinacloudapi.cn
+            BleuCloud  -> login.sovcloud-identity.fr   + graph.svc.sovcloud.fr
+            DelosCloud -> login.sovcloud-identity.de   + graph.svc.sovcloud.de
+            GovSGCloud -> login.sovcloud-identity.sg   + graph.svc.sovcloud.sg
+
+        BleuCloud (France), DelosCloud (Germany) and GovSGCloud (Singapore) endpoint
+        values mirror the official SDK source (msgraph-sdk-powershell PR #3523).
+        Microsoft's built-in first-party client ID may not exist in sovereign
+        clouds; pass -ClientId with a local app registration there.
 
     .OUTPUTS
         [pscustomobject] with .Login, .GraphResource, .Environment
     #>
     [CmdletBinding()]
     param(
-        [ValidateSet('Global','USGov','USGovDoD','China')]
+        [ValidateSet('Global','USGov','USGovDoD','China','BleuCloud','DelosCloud','GovSGCloud')]
         [string]$Environment = 'Global'
     )
 
@@ -39,6 +47,27 @@ function Resolve-MgcAuthority {
                 Environment   = 'China'
                 Login         = 'https://login.chinacloudapi.cn'
                 GraphResource = 'https://microsoftgraph.chinacloudapi.cn'
+            }
+        }
+        'BleuCloud' {
+            return [pscustomobject]@{
+                Environment   = 'BleuCloud'
+                Login         = 'https://login.sovcloud-identity.fr'
+                GraphResource = 'https://graph.svc.sovcloud.fr'
+            }
+        }
+        'DelosCloud' {
+            return [pscustomobject]@{
+                Environment   = 'DelosCloud'
+                Login         = 'https://login.sovcloud-identity.de'
+                GraphResource = 'https://graph.svc.sovcloud.de'
+            }
+        }
+        'GovSGCloud' {
+            return [pscustomobject]@{
+                Environment   = 'GovSGCloud'
+                Login         = 'https://login.sovcloud-identity.sg'
+                GraphResource = 'https://graph.svc.sovcloud.sg'
             }
         }
         default {

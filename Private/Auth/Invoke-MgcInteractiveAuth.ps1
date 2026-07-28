@@ -58,6 +58,11 @@ function Invoke-MgcInteractiveAuth {
         try { $rng.GetBytes($stateBytes) } finally { $rng.Dispose() }
         $state = [Convert]::ToBase64String($stateBytes).TrimEnd('=').Replace('+','-').Replace('/','_')
 
+        # CAE opt-in: advertise the CP1 client capability so Entra issues
+        # long-lived, revocable access tokens (claims challenges handled in
+        # Invoke-MgGraphCommunityRequest).
+        $caeClaims = Get-MgcCaeClaims
+
         $authParams = [ordered]@{
             client_id             = $ClientId
             response_type         = 'code'
@@ -67,6 +72,7 @@ function Invoke-MgcInteractiveAuth {
             state                 = $state
             code_challenge        = $pkce.Challenge
             code_challenge_method = $pkce.Method
+            claims                = $caeClaims
             prompt                = $(if ($ForceConsent) { 'consent' } else { 'select_account' })
         }
 
@@ -123,6 +129,7 @@ function Invoke-MgcInteractiveAuth {
             redirect_uri  = $redirectUri
             code_verifier = $pkce.Verifier
             scope         = ($Scopes -join ' ')
+            claims        = $caeClaims
         }
         return Invoke-MgcTokenEndpoint -Url "$LoginEndpoint/$TenantSegment/oauth2/v2.0/token" -Body $body
     }

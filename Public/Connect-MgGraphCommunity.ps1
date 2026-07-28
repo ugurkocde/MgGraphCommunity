@@ -30,12 +30,18 @@ function Connect-MgGraphCommunity {
         ClientSecret and Certificate flows.
 
     .PARAMETER ClientId
-        Application ID. Defaults to Microsoft's well-known PowerShell client
-        (14d82eec-204b-4c2f-b7e8-296a70dab67e) for Interactive and DeviceCode flows.
+        Application ID. For Interactive and DeviceCode flows, defaults to a
+        ClientId saved via Set-MgGraphCommunityDefaultClientId (or
+        New-MgGraphCommunityAppRegistration -SetAsDefault) when one exists,
+        otherwise to Microsoft's well-known PowerShell client
+        (14d82eec-204b-4c2f-b7e8-296a70dab67e). An explicit -ClientId always wins.
         Required for ClientSecret and Certificate flows.
 
     .PARAMETER Environment
-        Microsoft cloud environment. One of Global, USGov, USGovDoD, China. Defaults to Global.
+        Microsoft cloud environment. One of Global, USGov, USGovDoD, China,
+        BleuCloud, DelosCloud, GovSGCloud. Defaults to Global. The built-in
+        first-party ClientId may not exist in sovereign clouds; pass -ClientId
+        with a local app registration there.
 
     .PARAMETER RedirectPort
         Optional fixed loopback port for the Interactive flow's redirect URI. Defaults
@@ -135,7 +141,7 @@ function Connect-MgGraphCommunity {
         [Parameter(Mandatory, ParameterSetName = 'CertificateName')]
         [string]$ClientId = '14d82eec-204b-4c2f-b7e8-296a70dab67e',
 
-        [ValidateSet('Global','USGov','USGovDoD','China')]
+        [ValidateSet('Global','USGov','USGovDoD','China','BleuCloud','DelosCloud','GovSGCloud')]
         [string]$Environment = 'Global',
 
         [switch]$NoWelcome,
@@ -180,6 +186,18 @@ function Connect-MgGraphCommunity {
     )
 
     $ErrorActionPreference = 'Stop'
+
+    # A user-saved default ClientId (Set-MgGraphCommunityDefaultClientId) takes
+    # the place of the built-in Microsoft client ID for the delegated flows.
+    # An explicitly passed -ClientId always wins.
+    if (-not $PSBoundParameters.ContainsKey('ClientId') -and
+        $PSCmdlet.ParameterSetName -in 'Interactive','DeviceCode') {
+        $savedClientId = Get-MgcDefaultClientId
+        if ($savedClientId) {
+            Write-Verbose "Using saved default ClientId $savedClientId (clear with Set-MgGraphCommunityDefaultClientId -Clear)."
+            $ClientId = $savedClientId
+        }
+    }
 
     $authority      = Resolve-MgcAuthority -Environment $Environment
     $tenantSegment  = if ($TenantId) { $TenantId } else { 'common' }

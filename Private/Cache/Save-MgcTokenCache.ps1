@@ -34,10 +34,15 @@ function Save-MgcTokenCache {
 
     # Persist the refresh token + minimal metadata only. The access token is
     # short-lived and never needed across sessions, so it stays off disk.
+    # cae records that this entry was acquired by a CAE-capable (CP1) client.
+    # Access tokens are re-acquired on every silent refresh with the CP1
+    # capability attached, so a cached entry can never yield a token that is
+    # treated as CAE-capable without being one.
     $persistable = [pscustomobject]@{
         refresh_token = $Tokens.refresh_token
         token_type    = $Tokens.token_type
         scope         = $Tokens.scope
+        cae           = $true
     }
     $payload = $persistable | ConvertTo-Json -Compress -Depth 5
 

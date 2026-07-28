@@ -1,6 +1,6 @@
 @{
     RootModule           = 'MgGraphCommunity.psm1'
-    ModuleVersion        = '1.4.0'
+    ModuleVersion        = '1.5.0'
     GUID                 = 'a7c1f4b8-5d20-4e6e-9a3b-2e8f0d1c7b42'
     Author               = 'MgGraphCommunity contributors'
     CompanyName          = 'Community'
@@ -22,11 +22,13 @@
         'Invoke-MgGraphCommunityBatch',
         'Add-MgGraphCommunityDefaultHeader',
         'Remove-MgGraphCommunityDefaultHeader',
-        'Get-MgGraphCommunityDefaultHeader'
+        'Get-MgGraphCommunityDefaultHeader',
+        'New-MgGraphCommunityAppRegistration',
+        'Set-MgGraphCommunityDefaultClientId'
     )
     CmdletsToExport      = @()
     VariablesToExport    = @()
-    AliasesToExport      = @('Invoke-MgcRequest','Invoke-MgcBatch','Select-MgcContext','Add-MgcHeader','Remove-MgcHeader','Get-MgcHeader')
+    AliasesToExport      = @('Invoke-MgcRequest','Invoke-MgcBatch','Select-MgcContext','Add-MgcHeader','Remove-MgcHeader','Get-MgcHeader','New-MgcApp','Set-MgcDefaultClientId')
 
     PrivateData = @{
         PSData = @{
@@ -34,6 +36,24 @@
             LicenseUri   = 'https://github.com/ugurkocde/MgGraphCommunity/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/ugurkocde/MgGraphCommunity'
             ReleaseNotes = @'
+1.5.0
+- New: New-MgGraphCommunityAppRegistration (alias New-MgcApp) - create a ready-to-use
+  single-tenant public client app registration for WAM-free sign-in, with optional
+  -AddWamRedirectUri (SDK/WAM compatibility) and -SetAsDefault. Prepares for Microsoft's
+  announced changes to the default delegated-auth app (msgraph-sdk-powershell #3629).
+- New: Set-MgGraphCommunityDefaultClientId (alias Set-MgcDefaultClientId) - persist your
+  own ClientId as the default for Connect-MgGraphCommunity; -Clear restores the built-in.
+  Explicit -ClientId always wins over the saved default.
+- New: Continuous Access Evaluation (CAE) support. Delegated flows (Interactive,
+  DeviceCode, refresh) now advertise the CP1 client capability, so Entra ID issues
+  long-lived revocable access tokens. Invoke-MgGraphCommunityRequest answers CAE claims
+  challenges (401 + WWW-Authenticate claims) with a single silent re-acquisition and
+  retry. Matches the official SDK's CAE support added in v2.37.0. App-only flows are
+  unchanged (CAE for workload identities is a separate, narrower Microsoft feature).
+- New: sovereign cloud environments BleuCloud (France), DelosCloud (Germany) and
+  GovSGCloud (Singapore) on -Environment, mirroring official SDK v2.36.0 endpoints.
+  Not live-tested; the built-in ClientId may not exist there, bring your own.
+
 1.4.0
 - New: Invoke-MgGraphCommunityBatch (alias Invoke-MgcBatch) - combine up to 20 Graph
   requests per $batch call, auto-chunking larger sets and auto-retrying throttled

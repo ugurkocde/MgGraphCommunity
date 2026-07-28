@@ -24,9 +24,14 @@ function Invoke-MgcDeviceCodeAuth {
     $deviceUrl = "$LoginEndpoint/$TenantSegment/oauth2/v2.0/devicecode"
     $tokenUrl  = "$LoginEndpoint/$TenantSegment/oauth2/v2.0/token"
 
+    # CAE opt-in: CP1 client capability (claims challenges handled in
+    # Invoke-MgGraphCommunityRequest).
+    $caeClaims = Get-MgcCaeClaims
+
     $deviceBody = @{
         client_id = $ClientId
         scope     = ($Scopes -join ' ')
+        claims    = $caeClaims
     }
 
     try {
@@ -50,6 +55,7 @@ function Invoke-MgcDeviceCodeAuth {
                 client_id   = $ClientId
                 grant_type  = 'urn:ietf:params:oauth:grant-type:device_code'
                 device_code = $device.device_code
+                claims      = $caeClaims
             }
             return Invoke-MgcTokenEndpoint -Url $tokenUrl -Body $body
         } catch {

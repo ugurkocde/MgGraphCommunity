@@ -654,3 +654,304 @@ Describe 'Get-MgcTokenExpiry' {
         $expiry | Should -BeGreaterThan (Get-Date).ToUniversalTime()
     }
 }
+
+# ---------------------------------------------------------------------------
+# v1.5.0 - sovereign clouds, CAE, default ClientId, app registration helper
+# ---------------------------------------------------------------------------
+
+Describe 'Resolve-MgcAuthority v1.5.0 environments' {
+    It 'returns the exact endpoint pair for every environment' {
+        $expected = @{
+            Global     = @('https://login.microsoftonline.com',  'https://graph.microsoft.com')
+            USGov      = @('https://login.microsoftonline.us',   'https://graph.microsoft.us')
+            USGovDoD   = @('https://login.microsoftonline.us',   'https://dod-graph.microsoft.us')
+            China      = @('https://login.chinacloudapi.cn',     'https://microsoftgraph.chinacloudapi.cn')
+            BleuCloud  = @('https://login.sovcloud-identity.fr', 'https://graph.svc.sovcloud.fr')
+            DelosCloud = @('https://login.sovcloud-identity.de', 'https://graph.svc.sovcloud.de')
+            GovSGCloud = @('https://login.sovcloud-identity.sg', 'https://graph.svc.sovcloud.sg')
+        }
+        foreach ($env in $expected.Keys) {
+            $a = Resolve-MgcAuthority -Environment $env
+            $a.Environment   | Should -Be $env
+            $a.Login         | Should -Be $expected[$env][0]
+            $a.GraphResource | Should -Be $expected[$env][1]
+        }
+    }
+
+    It 'Connect-MgGraphCommunity accepts the new environment names' {
+        $param = (Get-Command Connect-MgGraphCommunity).Parameters['Environment']
+        $validate = $param.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
+        foreach ($env in @('BleuCloud','DelosCloud','GovSGCloud')) {
+            $validate.ValidValues | Should -Contain $env
+        }
+    }
+}
+
+Describe 'Get-MgcCaeClaims' {
+    It 'returns the CP1 client capability by default' {
+        $claims = Get-MgcCaeClaims
+        $parsed = $claims | ConvertFrom-Json
+        $parsed.access_token.xms_cc.values | Should -Contain 'CP1'
+    }
+
+    It 'merges CP1 into a claims challenge' {
+        $challenge = '{"access_token":{"nbf":{"essential":true,"value":"1700000000"}}}'
+        $merged = Get-MgcCaeClaims -ChallengeClaims $challenge | ConvertFrom-Json
+        $merged.access_token.nbf.essential     | Should -BeTrue
+        $merged.access_token.xms_cc.values     | Should -Contain 'CP1'
+    }
+
+    It 'passes an unparseable challenge through untouched' {
+        Get-MgcCaeClaims -ChallengeClaims 'not-json{' | Should -Be 'not-json{'
+    }
+}
+
+Describe 'Get-MgcClaimsChallenge' {
+    It 'decodes a claims challenge from WWW-Authenticate' {
+        $json    = '{"access_token":{"nbf":{"essential":true,"value":"1700000000"}}}'
+        $encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($json))
+        $header  = 'Bearer realm="", authorization_uri="https://login.microsoftonline.com/common/oauth2/authorize", error="insufficient_claims", claims="' + $encoded + '"'
+        $decoded = Get-MgcClaimsChallenge -WwwAuthenticate $header
+        ($decoded | ConvertFrom-Json).access_token.nbf.essential | Should -BeTrue
+    }
+
+    It 'returns null when the header has no claims challenge' {
+        Get-MgcClaimsChallenge -WwwAuthenticate 'Bearer realm="", error="invalid_token"' | Should -BeNullOrEmpty
+        Get-MgcClaimsChallenge -WwwAuthenticate $null | Should -BeNullOrEmpty
+    }
+
+    It 'returns null when the claims value is not valid Base64 JSON' {
+        Get-MgcClaimsChallenge -WwwAuthenticate 'Bearer claims="%%%not-base64%%%"' | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'CAE claims parameter in delegated token requests' {
+    It 'Invoke-MgcRefreshTokenAuth sends CP1 claims by default' {
+        $script:tokenBody = $null
+        Mock Invoke-MgcTokenEndpoint {
+            $script:tokenBody = $Body
+            [pscustomobject]@{ access_token = 'AT'; refresh_token = 'RT'; expires_in = 3600 }
+        }
+        $null = Invoke-MgcRefreshTokenAuth -LoginEndpoint 'https://login.microsoftonline.com' `
+            -TenantSegment 'common' -ClientId 'c' -RefreshToken 'RT' -Scopes @('User.Read')
+        ($script:tokenBody['claims'] | ConvertFrom-Json).access_token.xms_cc.values | Should -Contain 'CP1'
+    }
+
+    It 'Invoke-MgcRefreshTokenAuth passes explicit challenge claims through' {
+        $script:tokenBody = $null
+        Mock Invoke-MgcTokenEndpoint {
+            $script:tokenBody = $Body
+            [pscustomobject]@{ access_token = 'AT'; refresh_token = 'RT'; expires_in = 3600 }
+        }
+        $null = Invoke-MgcRefreshTokenAuth -LoginEndpoint 'https://login.microsoftonline.com' `
+            -TenantSegment 'common' -ClientId 'c' -RefreshToken 'RT' -Scopes @('User.Read') `
+            -Claims '{"access_token":{"nbf":{"essential":true}}}'
+        $script:tokenBody['claims'] | Should -Be '{"access_token":{"nbf":{"essential":true}}}'
+    }
+}
+
+Describe 'Invoke-MgGraphCommunityRequest CAE claims challenge handling' {
+    BeforeAll {
+        $script:m = Get-Module MgGraphCommunity
+        & $script:m {
+            $script:MgcActiveSession = [pscustomobject]@{
+                Tokens        = [pscustomobject]@{ access_token = 'AT-old'; refresh_token = 'RT' }
+                ExpiresOn     = (Get-Date).ToUniversalTime().AddHours(1)
+                CacheKey      = 'cae-test-key'
+                Authority     = [pscustomobject]@{ Login = 'https://login.microsoftonline.com'; GraphResource = 'https://graph.microsoft.com' }
+                ClientId      = 'test-client'
+                TenantSegment = 'common'
+                Scopes        = @('User.Read')
+                FlowType      = 'Test'
+                Persist       = $false
+            }
+        }
+        $script:challengeJson    = '{"access_token":{"nbf":{"essential":true,"value":"1700000000"}}}'
+        $script:challengeHeader  = 'Bearer realm="", error="insufficient_claims", claims="' +
+            [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:challengeJson)) + '"'
+    }
+    AfterAll { & $script:m { $script:MgcActiveSession = $null } }
+    BeforeEach {
+        & $script:m { $script:MgcActiveSession.Tokens = [pscustomobject]@{ access_token = 'AT-old'; refresh_token = 'RT' } }
+    }
+
+    It 'answers a CAE claims challenge with one claims-bearing re-acquisition and retry' {
+        $script:httpCalls = 0
+        Mock -ModuleName MgGraphCommunity Invoke-MgcHttpRequest {
+            $script:httpCalls++
+            if ($Parameters['Headers']['Authorization'] -eq 'Bearer AT-new') {
+                [pscustomobject]@{ StatusCode = 200; Headers = @{ 'Content-Type' = 'application/json' }; Content = '{"ok":true}' }
+            } else {
+                [pscustomobject]@{ StatusCode = 401; Headers = @{ 'WWW-Authenticate' = $script:challengeHeader }; Content = '' }
+            }
+        }
+        $script:refreshClaims = 'unset'
+        Mock -ModuleName MgGraphCommunity Invoke-MgcRefreshTokenAuth {
+            $script:refreshClaims = $Claims
+            [pscustomobject]@{ access_token = 'AT-new'; refresh_token = 'RT2'; expires_in = 3600 }
+        }
+        $r = Invoke-MgGraphCommunityRequest -Uri '/me'
+        $r.ok | Should -BeTrue
+        $script:httpCalls | Should -Be 2
+        $parsed = $script:refreshClaims | ConvertFrom-Json
+        $parsed.access_token.nbf.essential   | Should -BeTrue
+        $parsed.access_token.xms_cc.values   | Should -Contain 'CP1'
+    }
+
+    It 'treats a plain 401 as an ordinary refresh (no challenge claims)' {
+        Mock -ModuleName MgGraphCommunity Invoke-MgcHttpRequest {
+            if ($Parameters['Headers']['Authorization'] -eq 'Bearer AT-new') {
+                [pscustomobject]@{ StatusCode = 200; Headers = @{ 'Content-Type' = 'application/json' }; Content = '{"ok":true}' }
+            } else {
+                [pscustomobject]@{ StatusCode = 401; Headers = @{ 'WWW-Authenticate' = 'Bearer realm="", error="invalid_token"' }; Content = '' }
+            }
+        }
+        $script:sawClaimsParam = $false
+        Mock -ModuleName MgGraphCommunity Invoke-MgcRefreshTokenAuth {
+            $script:sawClaimsParam = $PSBoundParameters.ContainsKey('Claims')
+            [pscustomobject]@{ access_token = 'AT-new'; refresh_token = 'RT2'; expires_in = 3600 }
+        }
+        (Invoke-MgGraphCommunityRequest -Uri '/me').ok | Should -BeTrue
+        $script:sawClaimsParam | Should -BeFalse
+    }
+
+    It 'throws a reconnect error when CAE re-acquisition fails' {
+        Mock -ModuleName MgGraphCommunity Invoke-MgcHttpRequest {
+            [pscustomobject]@{ StatusCode = 401; Headers = @{ 'WWW-Authenticate' = $script:challengeHeader }; Content = '' }
+        }
+        Mock -ModuleName MgGraphCommunity Invoke-MgcRefreshTokenAuth { throw 'refresh dead' }
+        { Invoke-MgGraphCommunityRequest -Uri '/me' } |
+            Should -Throw -ExpectedMessage '*Connect-MgGraphCommunity*'
+    }
+}
+
+Describe 'Default ClientId persistence and precedence' {
+    BeforeAll {
+        $script:m = Get-Module MgGraphCommunity
+    }
+    AfterAll {
+        & $script:m { $script:MgcActiveSession = $null; $script:MgcContext = $null; $script:MgcSessions = [ordered]@{} }
+    }
+
+    It 'Set / read / clear round-trips through config.json' {
+        Mock -ModuleName MgGraphCommunity Get-MgcAppDataDir { Join-Path $TestDrive 'mgc-config' }
+        $guid = '11111111-2222-3333-4444-555555555555'
+        Set-MgGraphCommunityDefaultClientId -ClientId $guid
+        & $script:m { Get-MgcDefaultClientId } | Should -Be $guid
+        Set-MgGraphCommunityDefaultClientId -Clear
+        & $script:m { Get-MgcDefaultClientId } | Should -BeNullOrEmpty
+    }
+
+    It 'rejects a non-GUID ClientId' {
+        { Set-MgGraphCommunityDefaultClientId -ClientId 'not-a-guid' } | Should -Throw
+    }
+
+    Context 'Connect-MgGraphCommunity precedence' {
+        BeforeEach {
+            Mock -ModuleName MgGraphCommunity Invoke-MgcInteractiveAuth {
+                $script:flowClientId = $ClientId
+                [pscustomobject]@{ access_token = 'AT'; refresh_token = $null; expires_in = 3600; token_type = 'Bearer' }
+            }
+            Mock -ModuleName MgGraphCommunity Send-MgcTokenToSdk { 'skipped' }
+        }
+
+        It 'uses the saved default when no -ClientId is passed' {
+            Mock -ModuleName MgGraphCommunity Get-MgcDefaultClientId { 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' }
+            Connect-MgGraphCommunity -NoWelcome -NoCache
+            & $script:m { $script:MgcActiveSession.ClientId } | Should -Be 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+        }
+
+        It 'an explicit -ClientId wins over the saved default' {
+            Mock -ModuleName MgGraphCommunity Get-MgcDefaultClientId { 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' }
+            Connect-MgGraphCommunity -NoWelcome -NoCache -ClientId 'ffffffff-1111-2222-3333-444444444444'
+            & $script:m { $script:MgcActiveSession.ClientId } | Should -Be 'ffffffff-1111-2222-3333-444444444444'
+        }
+
+        It 'falls back to the built-in Microsoft ClientId when nothing is saved' {
+            Mock -ModuleName MgGraphCommunity Get-MgcDefaultClientId { $null }
+            Connect-MgGraphCommunity -NoWelcome -NoCache
+            & $script:m { $script:MgcActiveSession.ClientId } | Should -Be '14d82eec-204b-4c2f-b7e8-296a70dab67e'
+        }
+    }
+}
+
+Describe 'New-MgGraphCommunityAppRegistration' {
+    BeforeAll {
+        $script:m = Get-Module MgGraphCommunity
+    }
+    AfterAll {
+        & $script:m { $script:MgcActiveSession = $null; $script:MgcContext = $null }
+    }
+
+    It 'throws a clear error when no session is active' {
+        & $script:m { $script:MgcActiveSession = $null }
+        { New-MgGraphCommunityAppRegistration } | Should -Throw -ExpectedMessage '*Application.ReadWrite.All*'
+    }
+
+    Context 'with an active session' {
+        BeforeEach {
+            & $script:m {
+                $script:MgcActiveSession = [pscustomobject]@{ Tokens = [pscustomobject]@{ access_token = 'AT'; refresh_token = $null } }
+                $script:MgcContext       = [pscustomobject]@{ TenantId = 'tenant-1' }
+            }
+            $script:graphCalls = [System.Collections.ArrayList]@()
+            Mock -ModuleName MgGraphCommunity Invoke-MgGraphCommunityRequest {
+                $null = $script:graphCalls.Add(@{ Method = $Method; Uri = $Uri; Body = $Body })
+                if ($Method -eq 'POST') {
+                    return [pscustomobject]@{ appId = '99999999-8888-7777-6666-555555555555'; id = 'new-obj-id'; displayName = $Body.displayName }
+                }
+                return [pscustomobject]@{ appId = '99999999-8888-7777-6666-555555555555' }
+            }
+        }
+
+        It 'creates a single-tenant public client app with the loopback redirect' {
+            $result = New-MgGraphCommunityAppRegistration -DisplayName 'TestApp'
+            $post = $script:graphCalls | Where-Object { $_.Method -eq 'POST' } | Select-Object -First 1
+            $post.Uri                          | Should -Be '/applications'
+            $post.Body.displayName             | Should -Be 'TestApp'
+            $post.Body.signInAudience          | Should -Be 'AzureADMyOrg'
+            $post.Body.isFallbackPublicClient  | Should -BeTrue
+            $post.Body.publicClient.redirectUris | Should -Contain 'http://localhost'
+            $result.ClientId | Should -Be '99999999-8888-7777-6666-555555555555'
+            $result.ObjectId | Should -Be 'new-obj-id'
+            $result.TenantId | Should -Be 'tenant-1'
+        }
+
+        It 'adds the WAM broker redirect URI with -AddWamRedirectUri' {
+            $result = New-MgGraphCommunityAppRegistration -AddWamRedirectUri
+            $patch = $script:graphCalls | Where-Object { $_.Method -eq 'PATCH' } | Select-Object -First 1
+            $patch.Uri | Should -Be '/applications/new-obj-id'
+            $patch.Body.publicClient.redirectUris | Should -Contain 'ms-appx-web://Microsoft.AAD.BrokerPlugin/99999999-8888-7777-6666-555555555555'
+            $result.RedirectUris | Should -Contain 'ms-appx-web://Microsoft.AAD.BrokerPlugin/99999999-8888-7777-6666-555555555555'
+        }
+
+        It 'persists the ClientId with -SetAsDefault' {
+            Mock -ModuleName MgGraphCommunity Set-MgGraphCommunityDefaultClientId { $script:savedDefault = $ClientId }
+            $script:savedDefault = $null
+            $null = New-MgGraphCommunityAppRegistration -SetAsDefault
+            $script:savedDefault | Should -Be '99999999-8888-7777-6666-555555555555'
+        }
+
+        It 'maps a 403 to an actionable missing-scope error' {
+            Mock -ModuleName MgGraphCommunity Invoke-MgGraphCommunityRequest {
+                if ($Method -eq 'POST') { throw 'Graph error 403 [Authorization_RequestDenied]: Insufficient privileges' }
+            }
+            { New-MgGraphCommunityAppRegistration } | Should -Throw -ExpectedMessage '*Application.ReadWrite.All*'
+        }
+    }
+}
+
+Describe 'Module exports the v1.5.0 surface' {
+    It 'exports the new functions' {
+        $m = Get-Module MgGraphCommunity
+        foreach ($name in @('New-MgGraphCommunityAppRegistration','Set-MgGraphCommunityDefaultClientId')) {
+            $m.ExportedFunctions.Keys | Should -Contain $name
+        }
+    }
+    It 'exports the new aliases' {
+        $m = Get-Module MgGraphCommunity
+        foreach ($alias in @('New-MgcApp','Set-MgcDefaultClientId')) {
+            $m.ExportedAliases.Keys | Should -Contain $alias
+        }
+    }
+}

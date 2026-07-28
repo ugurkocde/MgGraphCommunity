@@ -71,7 +71,7 @@ If you want context on the problem this module exists to solve, start there.
 | Access Token (BYO)   | `Connect-MgGraphCommunity -AccessToken $secure`             |
 | Managed Identity     | `Connect-MgGraphCommunity -Identity`                        |
 
-Sovereign clouds: pass `-Environment Global|USGov|USGovDoD|China`.
+Sovereign clouds: pass `-Environment Global|USGov|USGovDoD|China|BleuCloud|DelosCloud|GovSGCloud`. The Bleu (France), Delos (Germany) and GovSG (Singapore) endpoints mirror the official SDK v2.36.0 source; we cannot live-test those clouds, and Microsoft's built-in client ID may not exist there, so bring your own app registration.
 
 ## Comparison
 
@@ -87,7 +87,10 @@ How MgGraphCommunity stacks up against the closest alternatives. This is the hon
 | **Loopback listener safety** | n/a (MSAL) | **blocks forever** on `GetContext()` | async with 5-min timeout |
 | **CSRF `state` validation** | inside MSAL | Yes | Yes |
 | **Token cache default** | persistent (MSAL); in-memory only via `-ContextScope Process` | in-memory only | **in-memory by default, opt-in persistence** |
-| **Sovereign clouds at request layer** | Yes | No, hardcoded `graph.microsoft.com` | Yes: Global / USGov / USGovDoD / China |
+| **Cache cleared on disconnect** | Yes, since v2.38.1 (July 2026) | n/a | Yes from v1.0 (in-memory always; `-ClearCache` for disk) |
+| **Continuous Access Evaluation (CAE)** | Yes (v2.37.0+) | No | Yes (v1.5.0+): CP1 capability, claims-challenge retry |
+| **App registration bootstrap helper** | No (manual portal steps) | No | Yes: `New-MgGraphCommunityAppRegistration` |
+| **Sovereign clouds at request layer** | Yes | No, hardcoded `graph.microsoft.com` | Yes: Global / USGov / USGovDoD / China / Bleu / Delos / GovSG |
 | **URI input** | full URL or relative | `-Resource` + `-APIVersion` (no full URL accepted) | full URL or relative path (relative defaults to `/beta`; `-V1` for stable) |
 | **Pagination** | manual | **always on** | opt-in `-FollowPagination` |
 | **JSON `$batch` helper** | No (manual) | No | Yes: `Invoke-MgGraphCommunityBatch` (auto-chunk 20, retries throttled sub-requests) |
@@ -213,7 +216,37 @@ The Microsoft SDK persists its MSAL token cache by default and you have to remem
 
 ## Bring your own app registration
 
-Pass `-ClientId` and `-TenantId` (and optionally `-RedirectPort`):
+### Prepare for Microsoft's default app change
+
+Microsoft has announced upcoming changes to the default application used for delegated authentication, the same built-in client ID this module (and the official SDK) signs in with:
+
+> **<https://github.com/microsoftgraph/msgraph-sdk-powershell/issues/3629>**
+
+Nothing is broken today; the built-in client ID keeps working. But when that change lands, sign-ins that depend on Microsoft's default app may change behavior with no action on your side. An app registration you own makes your sign-ins independent of whatever Microsoft does with theirs, and v1.5.0 turns that into a one-liner:
+
+```powershell
+# One-time setup: create your own app registration and make it the default
+Connect-MgGraphCommunity -Scopes 'Application.ReadWrite.All'
+New-MgGraphCommunityAppRegistration -SetAsDefault
+
+# From then on, every Connect-MgGraphCommunity uses your app automatically
+Connect-MgGraphCommunity
+```
+
+`New-MgGraphCommunityAppRegistration` (alias `New-MgcApp`) creates a single-tenant public client app with the loopback redirect this module's PKCE flow needs and no pre-configured permissions; scopes stay dynamic with consent at sign-in, exactly like the built-in client ID. Add `-AddWamRedirectUri` if the same app should also work with the official SDK's WAM sign-in. The first sign-in against a brand-new app can take a minute or two while Entra ID propagates it.
+
+Manage the saved default with `Set-MgGraphCommunityDefaultClientId` (alias `Set-MgcDefaultClientId`):
+
+```powershell
+Set-MgGraphCommunityDefaultClientId -ClientId '00000000-0000-0000-0000-000000000000'
+Set-MgGraphCommunityDefaultClientId -Clear     # back to the built-in Microsoft client ID
+```
+
+Precedence: an explicit `-ClientId` on `Connect-MgGraphCommunity` > the saved default > the built-in Microsoft client ID.
+
+### Manual setup
+
+Prefer the portal? Pass `-ClientId` and `-TenantId` (and optionally `-RedirectPort`):
 
 ```powershell
 Connect-MgGraphCommunity `
@@ -227,6 +260,10 @@ App reg setup:
 1. Register a new application in Entra ID.
 2. **Authentication -> Add a platform -> Mobile and desktop applications**: add `http://localhost` (or a specific `http://localhost:PORT`, in which case pass `-RedirectPort PORT`).
 3. **API permissions**: add the delegated Graph scopes you need and grant admin consent if required.
+
+## Continuous Access Evaluation
+
+From v1.5.0 the delegated flows advertise the `CP1` client capability, so Entra ID issues long-lived, revocable access tokens (typically up to 24 hours instead of about 1 hour). When a revocation event hits (user disabled, password reset, location policy), Graph answers with a claims challenge; `Invoke-MgGraphCommunityRequest` catches it, silently re-acquires a token satisfying the challenge, and retries the request once. If silent re-acquisition is not possible you get a clear error telling you to reconnect. No configuration needed. App-only flows are unchanged (CAE for workload identities is a separate Microsoft feature that requires resource-side configuration).
 
 ## License
 

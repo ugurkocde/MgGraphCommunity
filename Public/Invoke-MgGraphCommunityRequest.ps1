@@ -245,20 +245,40 @@ function Invoke-MgGraphCommunityRequest {
     $attempt = & $sendRequest -accessToken $script:MgcActiveSession.Tokens.access_token
 
     # ---- Retry on 401: reactive refresh once if possible ----
+    # A plain 401 means the access token expired; a 401 whose WWW-Authenticate
+    # header carries a claims challenge is a Continuous Access Evaluation event
+    # (revocation, policy change). Both paths re-acquire silently exactly once,
+    # the CAE path passing the challenge claims back to the token endpoint.
     if ($attempt.StatusCode -eq 401 -and $script:MgcActiveSession.Tokens.refresh_token) {
-        Write-Verbose "401 from Graph - attempting silent token refresh."
+        $challengeClaims = $null
+        if ($attempt.Headers) {
+            $challengeClaims = Get-MgcClaimsChallenge -WwwAuthenticate $attempt.Headers['WWW-Authenticate']
+        }
+        if ($challengeClaims) {
+            Write-Verbose "401 with CAE claims challenge - re-acquiring token with challenge claims."
+        } else {
+            Write-Verbose "401 from Graph - attempting silent token refresh."
+        }
         try {
-            $newTokens = Invoke-MgcRefreshTokenAuth `
-                -LoginEndpoint $script:MgcActiveSession.Authority.Login `
-                -TenantSegment $script:MgcActiveSession.TenantSegment `
-                -ClientId      $script:MgcActiveSession.ClientId `
-                -RefreshToken  $script:MgcActiveSession.Tokens.refresh_token `
-                -Scopes        $script:MgcActiveSession.Scopes
+            $refreshParams = @{
+                LoginEndpoint = $script:MgcActiveSession.Authority.Login
+                TenantSegment = $script:MgcActiveSession.TenantSegment
+                ClientId      = $script:MgcActiveSession.ClientId
+                RefreshToken  = $script:MgcActiveSession.Tokens.refresh_token
+                Scopes        = $script:MgcActiveSession.Scopes
+            }
+            if ($challengeClaims) {
+                $refreshParams['Claims'] = Get-MgcCaeClaims -ChallengeClaims $challengeClaims
+            }
+            $newTokens = Invoke-MgcRefreshTokenAuth @refreshParams
             $script:MgcActiveSession.Tokens    = $newTokens
             $script:MgcActiveSession.ExpiresOn = Get-MgcTokenExpiry -Tokens $newTokens
             Save-MgcTokenCache -Key $script:MgcActiveSession.CacheKey -Tokens $newTokens -Persist:$script:MgcActiveSession.Persist
             $attempt = & $sendRequest -accessToken $newTokens.access_token
         } catch {
+            if ($challengeClaims) {
+                throw "Continuous Access Evaluation re-authentication failed. Run Connect-MgGraphCommunity to sign in again. Details: $_"
+            }
             Write-Verbose "Reactive refresh failed: $_"
         }
     }

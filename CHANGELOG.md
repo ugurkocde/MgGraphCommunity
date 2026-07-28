@@ -4,6 +4,16 @@ All notable changes to MgGraphCommunity are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-07-28
+
+Resilience and parity release. Prepares for Microsoft's announced change to the default delegated-auth app ([msgraph-sdk-powershell #3629](https://github.com/microsoftgraph/msgraph-sdk-powershell/issues/3629)) and matches the CAE and sovereign cloud support the official SDK shipped in v2.36.0/v2.37.0. Fully backward compatible.
+
+### Added
+- **`New-MgGraphCommunityAppRegistration`** (alias `New-MgcApp`). Creates a single-tenant public client app registration ready for this module's WAM-free Interactive and DeviceCode flows (`signInAudience AzureADMyOrg`, `isFallbackPublicClient`, `http://localhost` loopback redirect, no pre-configured permissions, dynamic consent). Requires an active connection with the delegated `Application.ReadWrite.All` scope. `-AddWamRedirectUri` additionally registers the WAM broker redirect so the same app works with the official SDK; `-SetAsDefault` persists the new ClientId as this module's default.
+- **`Set-MgGraphCommunityDefaultClientId`** (alias `Set-MgcDefaultClientId`). Persists a ClientId (in `config.json` next to the token cache) that `Connect-MgGraphCommunity` uses as its default for the Interactive and DeviceCode flows. Precedence: explicit `-ClientId` > saved default > built-in Microsoft client ID. `-Clear` removes the saved value.
+- **Continuous Access Evaluation (CAE).** The delegated flows (Interactive, DeviceCode, silent refresh) now advertise the `CP1` client capability via the OAuth `claims` parameter, so Entra ID issues long-lived, revocable access tokens. When Graph answers 401 with a CAE claims challenge (`WWW-Authenticate ... claims="..."`), `Invoke-MgGraphCommunityRequest` decodes the challenge, silently re-acquires a token carrying those claims (merged with `CP1`), and retries the request exactly once; if silent re-acquisition fails, a clear reconnect error is thrown. Persisted cache entries record the CAE capability. App-only flows are unchanged: CAE for workload identities is a separate, narrower Microsoft feature that requires resource-side configuration.
+- **Sovereign clouds** `BleuCloud` (France), `DelosCloud` (Germany) and `GovSGCloud` (Singapore) on `-Environment`. Endpoint values mirror the official SDK source (v2.36.0, PR #3523); these clouds are not live-tested by this project. The built-in first-party ClientId may not exist in sovereign clouds; pass `-ClientId` with a local app registration there.
+
 ## [1.4.0] - 2026-06-23
 
 Feature release. Bundles the v1.3.1 bug fixes and security hardening (see below) plus new capabilities. New cmdlets and parameters; fully backward compatible.
